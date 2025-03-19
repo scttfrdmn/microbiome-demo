@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Omics Demo Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/recharts@2.1.6/umd/Recharts.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1013.0.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div id="root" class="container mx-auto py-6 px-4"></div>
+
+    <script type="text/babel" src="js/dashboard.js"></script>
+    <script type="text/babel">
+        ReactDOM.render(<OmicsDashboard />, document.getElementById('root'));
+    </script>
+
+    <!-- Load AWS SDK configuration -->
+    <script>
+        // Initialize AWS SDK with config from environment
+        const loadAwsConfig = async () => {
+            try {
+                const response = await fetch('/api/aws-config');
+                const config = await response.json();
+                AWS.config.region = config.region;
+                AWS.config.credentials = new AWS.Credentials({
+                    accessKeyId: config.accessKeyId,
+                    secretAccessKey: config.secretAccessKey,
+                    sessionToken: config.sessionToken
+                });
+                console.log('AWS SDK configured successfully');
+            } catch (error) {
+                console.error('Failed to load AWS config:', error);
+                // Fall back to simulation mode if we can't load AWS config
+                window.simulationModeEnabled = true;
+            }
+        };
+
+        // Call the function to load AWS config
+        loadAwsConfig();
+    </script>
+</body>
+</html>

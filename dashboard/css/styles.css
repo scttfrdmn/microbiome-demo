@@ -1,0 +1,97 @@
+/* Additional custom styles for the dashboard */
+
+/* Enhance panel shadows */
+.shadow {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Smooth transitions */
+button, .rounded-full {
+    transition: all 0.2s ease-in-out;
+}
+
+button:hover {
+    transform: translateY(-1px);
+}
+
+/* Status indicators */
+.bg-green-100 {
+    background-color: rgba(209, 250, 229, 0.8);
+}
+
+.bg-blue-100 {
+    background-color: rgba(219, 234, 254, 0.8);
+}
+
+.bg-yellow-100 {
+    background-color: rgba(254, 243, 199, 0.8);
+}
+
+/* Progress bars animation */
+.h-2 div, .h-4 div {
+    transition: width 0.5s ease-in-out;
+}
+
+/* Make charts responsive */
+.recharts-responsive-container {
+    min-height: 300px;
+}
+
+/* Cost ticker animation */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+.text-3xl.font-bold {
+    animation: pulse 2s infinite;
+    animation-play-state: paused;
+}
+
+/* Only animate when demo is running */
+.demo-running .text-3xl.font-bold {
+    animation-play-state: running;
+}
+
+/* AWS logo styling */
+.aws-logo {
+    height: 24px;
+    margin-right: 8px;
+}
+
+/* Tab button hover effects */
+.bg-gray-100:hover {
+    background-color: #f3f4f6;
+}
+
+/* Improve tooltip contrast */
+.recharts-tooltip-wrapper {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+
+/* Loading spinner */
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    border-radius: 50%;
+    border-top-color: #4F46E5;
+    animation: spin 1s ease-in-out infinite;
+    margin: 0 auto;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Mobile responsiveness improvements */
+@media (max-width: 768px) {
+    .grid-cols-2 {
+        grid-template-columns: 1fr;
+    }
+    
+    .recharts-responsive-container {
+        min-height: 250px;
+    }
+}
