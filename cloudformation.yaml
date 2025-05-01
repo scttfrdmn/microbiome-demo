@@ -1,20 +1,20 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation template for 15-minute Omics Demo'
+Description: 'CloudFormation template for 15-minute Microbiome Demo'
 
 Parameters:
   DataBucketName:
     Type: String
     Description: Name of the S3 bucket to store input and output data
-    Default: omics-demo-bucket
+    Default: microbiome-demo-bucket
 
   KeyPairName:
     Type: String
     Description: EC2 Key Pair for SSH access
-    Default: omics-demo-key
+    Default: microbiome-demo-key
 
 Resources:
   # VPC and Networking resources
-  OmicsVPC:
+  MicrobiomeVPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.0.0.0/16
@@ -22,70 +22,70 @@ Resources:
       EnableDnsHostnames: true
       Tags:
         - Key: Name
-          Value: OmicsVPC
+          Value: MicrobiomeVPC
 
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref OmicsVPC
+      VpcId: !Ref MicrobiomeVPC
       CidrBlock: 10.0.1.0/24
       AvailabilityZone: !Select [ 0, !GetAZs '' ]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: OmicsPublicSubnet1
+          Value: MicrobiomePublicSubnet1
 
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref OmicsVPC
+      VpcId: !Ref MicrobiomeVPC
       CidrBlock: 10.0.2.0/24
       AvailabilityZone: !Select [ 1, !GetAZs '' ]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: OmicsPublicSubnet2
+          Value: MicrobiomePublicSubnet2
 
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref OmicsVPC
+      VpcId: !Ref MicrobiomeVPC
       CidrBlock: 10.0.3.0/24
       AvailabilityZone: !Select [ 0, !GetAZs '' ]
       Tags:
         - Key: Name
-          Value: OmicsPrivateSubnet1
+          Value: MicrobiomePrivateSubnet1
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref OmicsVPC
+      VpcId: !Ref MicrobiomeVPC
       CidrBlock: 10.0.4.0/24
       AvailabilityZone: !Select [ 1, !GetAZs '' ]
       Tags:
         - Key: Name
-          Value: OmicsPrivateSubnet2
+          Value: MicrobiomePrivateSubnet2
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
         - Key: Name
-          Value: OmicsIGW
+          Value: MicrobiomeIGW
 
   GatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      VpcId: !Ref OmicsVPC
+      VpcId: !Ref MicrobiomeVPC
       InternetGatewayId: !Ref InternetGateway
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref OmicsVPC
+      VpcId: !Ref MicrobiomeVPC
       Tags:
         - Key: Name
-          Value: OmicsPublicRouteTable
+          Value: MicrobiomePublicRouteTable
 
   PublicRoute:
     Type: AWS::EC2::Route
@@ -112,7 +112,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security group for AWS Batch compute resources
-      VpcId: !Ref OmicsVPC
+      VpcId: !Ref MicrobiomeVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
@@ -155,6 +155,20 @@ Resources:
     Properties:
       Roles:
         - !Ref BatchInstanceRole
+
+  BatchJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: batch.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
@@ -423,7 +437,7 @@ Resources:
           
           def handler(event, context):
               """
-              Orchestrates the omics demo workflow by submitting batch jobs
+              Orchestrates the microbiome demo workflow by submitting batch jobs
               and monitoring their progress.
               """
               # Initialize clients
@@ -437,20 +451,22 @@ Resources:
               
               # Submit the main job
               response = batch.submit_job(
-                  jobName='omics-demo-{}'.format(int(time.time())),
+                  jobName='microbiome-demo-{}'.format(int(time.time())),
                   jobQueue=job_queue,
                   jobDefinition=job_definition,
                   containerOverrides={
                       'command': [
                           'nextflow',
                           'run',
-                          'main.nf',
+                          'workflow/microbiome_main.nf',
                           '-profile',
                           'aws',
                           '--samples',
                           's3://{}/input/sample_list.csv'.format(data_bucket),
                           '--output',
-                          's3://{}/results'.format(data_bucket)
+                          's3://{}/results'.format(data_bucket),
+                          '--bucket_name',
+                          '{}'.format(data_bucket)
                       ]
                   }
               )

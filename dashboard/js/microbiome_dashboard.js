@@ -1,6 +1,11 @@
 // MicrobiomeDashboard.js
-import React, { useState, useEffect } from 'react';
-import {
+// Using UMD modules instead of ES6 imports for browser compatibility
+const {
+  useState, 
+  useEffect
+} = React;
+
+const {
   LineChart,
   Line,
   AreaChart,
@@ -18,7 +23,7 @@ import {
   Cell,
   ScatterChart,
   Scatter
-} from 'recharts';
+} = Recharts;
 
 // Demo configuration
 const DEMO_DURATION_MINUTES = 15;

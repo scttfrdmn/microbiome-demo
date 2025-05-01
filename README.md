@@ -12,6 +12,14 @@ This demo processes 100 metagenomic samples from the Human Microbiome Project in
 
 All this is accomplished in 15 minutes for ~$38, compared to 2 weeks and $1,800 with traditional approaches.
 
+## How It Works
+
+The demo uses:
+- **Nextflow** for workflow management: The pipeline is defined in `workflow/microbiome_main.nf`
+- **AWS Batch** for compute: Both CPU and GPU workloads are distributed across cost-effective instance types
+- **S3** for data storage: Input data, reference databases, and results
+- **React Dashboard**: Real-time visualization in the browser
+
 ## Prerequisites
 
 - AWS account with appropriate permissions
@@ -48,6 +56,8 @@ All this is accomplished in 15 minutes for ~$38, compared to 2 weeks and $1,800 
      --capabilities CAPABILITY_IAM \
      --parameters ParameterKey=DataBucketName,ParameterValue=your-unique-bucket-name
    ```
+   
+   Note: The stack name should be the same as defined in your `config.sh` file.
 
 5. Wait for stack creation to complete (10-15 minutes):
    ```

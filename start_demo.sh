@@ -1,10 +1,10 @@
 #!/bin/bash
-# start_demo.sh - Launch the omics demo workflow
+# start_demo.sh - Launch the microbiome demo workflow
 
 source ./config.sh
 
 echo "==========================================="
-echo "Starting Omics Demo"
+echo "Starting Microbiome Demo"
 echo "==========================================="
 echo "Stack name: $STACK_NAME"
 echo "Bucket: $BUCKET_NAME"

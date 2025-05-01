@@ -1,13 +1,13 @@
 #!/bin/bash
-# setup.sh - Initial setup for the omics demo
+# setup.sh - Initial setup for the microbiome demo
 
 set -e  # Exit on error
 
-BUCKET_NAME=${1:-omics-demo-bucket-$(LC_CTYPE=C tr -dc 'a-z0-9' < /dev/urandom | fold -w 10 | head -n 1)}
+BUCKET_NAME=${1:-microbiome-demo-bucket-$(LC_CTYPE=C tr -dc 'a-z0-9' < /dev/urandom | fold -w 10 | head -n 1)}
 REGION=${2:-us-east-1}
 
 echo "==========================================="
-echo "Omics Demo Initial Setup"
+echo "Microbiome Demo Initial Setup"
 echo "==========================================="
 echo "Target bucket: $BUCKET_NAME"
 echo "Region: $REGION"
@@ -40,13 +40,13 @@ cat > config.sh << EOF
 # Auto-generated configuration
 BUCKET_NAME=$BUCKET_NAME
 REGION=$REGION
-STACK_NAME=omics-demo
+STACK_NAME=microbiome-demo
 EOF
 
 chmod +x config.sh
 
 echo "Setup complete! Configuration saved to config.sh"
-echo "Next step: Run ./prepare_demo_data.sh to prepare the data"
+echo "Next step: Run ./prepare_microbiome_data.sh to prepare the data"
 
 # Create empty directories if they don't exist
 mkdir -p dashboard/css dashboard/js workflow/templates
