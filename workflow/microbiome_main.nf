@@ -6,13 +6,15 @@
  * and performs taxonomic and functional profiling
  */
 
-// Define parameters with defaults that will be overridden by command line or config
-params.samples = 's3://${params.bucket_name}/input/sample_list.csv'
-params.output = 's3://${params.bucket_name}/results'
-params.kraken_db = 's3://${params.bucket_name}/reference/kraken2_db'
-params.metaphlan_db = 's3://${params.bucket_name}/reference/metaphlan_db'
-params.humann_db = 's3://${params.bucket_name}/reference/humann_db'
+// Default values
 params.bucket_name = 'microbiome-demo-bucket' // Default bucket name
+
+// Define parameters with defaults that will be overridden by command line or config
+params.samples = "s3://${params.bucket_name}/input/sample_list.csv"
+params.output = "s3://${params.bucket_name}/results"
+params.kraken_db = "s3://${params.bucket_name}/reference/kraken2_db"
+params.metaphlan_db = "s3://${params.bucket_name}/reference/metaphlan_db"
+params.humann_db = "s3://${params.bucket_name}/reference/humann_db"
 
 // Print pipeline info
 log.info """

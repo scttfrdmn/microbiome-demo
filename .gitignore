@@ -1,0 +1,82 @@
+**/.claude/settings.local.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# AWS credentials and config
+.aws/
+
+# Nextflow specific
+.nextflow/
+.nextflow.log*
+work/
+.nextflow.history
+.cache/
+timeline_*.html
+trace_*.txt
+dag_*.html
+report_*.html
+*.dot
+*.img
+*.simg
+
+# Node.js dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+package-lock.json
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.log
+temp/
+tmp/
+
+# Project specific
+results/
+.results/
+demo_results/
+logs/
+data/
+s3_data/
+reference/
+.env
+config.local.sh
