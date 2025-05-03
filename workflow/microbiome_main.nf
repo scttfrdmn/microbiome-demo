@@ -40,6 +40,8 @@ process preprocess_reads {
     cpus 4
     memory '8 GB'
     tag { sample_id }
+    errorStrategy { task.attempt <= 3 ? 'retry' : 'terminate' }
+    maxRetries 3
     
     input:
     tuple val(sample_id), val(body_site), path(fastq_1), path(fastq_2) from fastq_files
@@ -50,7 +52,17 @@ process preprocess_reads {
     
     script:
     """
+    # Error handling
+    set -e
+    
+    # Validate input files exist and are not empty
+    if [ ! -s "${fastq_1}" ] || [ ! -s "${fastq_2}" ]; then
+        echo "ERROR: Input files missing or empty: ${fastq_1} ${fastq_2}"
+        exit 1
+    fi
+    
     # Quality trimming and adapter removal with fastp
+    echo "Starting fastp for sample ${sample_id}..."
     fastp --in1 ${fastq_1} --in2 ${fastq_2} \
           --out1 ${sample_id}_1.trimmed.fastq.gz \
           --out2 ${sample_id}_2.trimmed.fastq.gz \
@@ -61,9 +73,16 @@ process preprocess_reads {
           --json ${sample_id}.fastp.json \
           --html ${sample_id}.fastp.html \
           --thread ${task.cpus}
-
+    
+    # Verify output files were created
+    if [ ! -s "${sample_id}_1.trimmed.fastq.gz" ] || [ ! -s "${sample_id}_2.trimmed.fastq.gz" ]; then
+        echo "ERROR: fastp failed to create output files"
+        exit 1
+    fi
+    
     # Run FastQC on trimmed files
-    mkdir ${sample_id}_fastqc
+    echo "Running FastQC for sample ${sample_id}..."
+    mkdir -p ${sample_id}_fastqc
     fastqc -o ${sample_id}_fastqc -t ${task.cpus} ${sample_id}_1.trimmed.fastq.gz ${sample_id}_2.trimmed.fastq.gz
     
     # Log completion
@@ -80,6 +99,8 @@ process taxonomic_classification_kraken {
     memory '16 GB'
     accelerator 1  // Request 1 GPU
     tag { sample_id }
+    errorStrategy { task.attempt <= 3 ? 'retry' : 'terminate' }
+    maxRetries 3
     
     input:
     tuple val(sample_id), val(body_site), path(trimmed_1), path(trimmed_2) from reads_for_kraken
@@ -89,17 +110,61 @@ process taxonomic_classification_kraken {
     
     script:
     """
-    # Extract Kraken2 database
+    # Error handling
+    set -e
+    
+    # Validate input files exist and are not empty
+    if [ ! -s "${trimmed_1}" ] || [ ! -s "${trimmed_2}" ]; then
+        echo "ERROR: Input files missing or empty: ${trimmed_1} ${trimmed_2}"
+        exit 1
+    fi
+    
+    # Extract Kraken2 database with error handling
+    echo "Downloading Kraken2 database for sample ${sample_id}..."
     mkdir -p kraken2_db
-    aws s3 cp --recursive ${params.kraken_db}/ kraken2_db/
+    
+    # Use retry logic for AWS S3 download
+    max_attempts=3
+    attempt=1
+    download_successful=false
+    
+    while [ \$attempt -le \$max_attempts ] && [ "\$download_successful" = "false" ]; do
+        echo "Attempt \$attempt of \$max_attempts to download Kraken2 database..."
+        if aws s3 cp --recursive ${params.kraken_db}/ kraken2_db/ --quiet; then
+            download_successful=true
+            echo "Database download successful."
+        else
+            echo "Database download failed. Retrying in 10 seconds..."
+            sleep 10
+            attempt=\$((attempt+1))
+        fi
+    done
+    
+    if [ "\$download_successful" = "false" ]; then
+        echo "ERROR: Failed to download Kraken2 database after \$max_attempts attempts."
+        exit 1
+    fi
+    
+    # Verify database files exist
+    if [ ! -f "kraken2_db/hash.k2d" ] || [ ! -f "kraken2_db/opts.k2d" ]; then
+        echo "ERROR: Kraken2 database files missing or incomplete."
+        exit 1
+    fi
     
     # Run Kraken2 with GPU acceleration
+    echo "Running Kraken2 with GPU acceleration for sample ${sample_id}..."
     kraken2 --db kraken2_db \
             --paired ${trimmed_1} ${trimmed_2} \
             --output ${sample_id}.kraken.out \
             --report ${sample_id}.kreport \
             --use-gpu \
             --threads ${task.cpus}
+    
+    # Verify output files were created
+    if [ ! -s "${sample_id}.kraken.out" ] || [ ! -s "${sample_id}.kreport" ]; then
+        echo "ERROR: Kraken2 failed to create output files"
+        exit 1
+    fi
     
     # Log completion
     echo "Completed Kraken2 analysis for sample ${sample_id}"
