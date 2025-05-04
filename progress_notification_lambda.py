@@ -3,14 +3,272 @@ import boto3
 import os
 import logging
 import time
+import traceback
 from datetime import datetime
+from botocore.exceptions import ClientError
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Initialize S3 client
-s3 = boto3.client('s3')
+# Initialize AWS clients with error handling
+try:
+    s3 = boto3.client('s3')
+    sns = boto3.client('sns') if 'SNS_TOPIC_ARN' in os.environ else None
+except Exception as e:
+    logger.error(f"Failed to initialize AWS clients: {str(e)}")
+    # We'll handle this in the lambda_handler
+
+# Constants
+DEFAULT_STATUS = 'unknown'
+DEFAULT_PERCENT = 0
+DEFAULT_TIME_FORMAT = '--:--:--'
+MAX_RETRIES = 3
+BACKUP_SUFFIX = '.backup'
+
+class ProgressProcessingError(Exception):
+    """Custom exception for progress processing errors"""
+    pass
+
+def validate_event(event):
+    """
+    Validates the S3 event structure
+    Returns tuple of (bucket, key) or raises ProgressProcessingError
+    """
+    if not event or 'Records' not in event or not event['Records']:
+        raise ProgressProcessingError("Invalid event structure - missing Records")
+    
+    record = event['Records'][0]
+    if 's3' not in record or 'bucket' not in record['s3'] or 'object' not in record['s3']:
+        raise ProgressProcessingError("Invalid S3 event structure")
+    
+    try:
+        bucket = record['s3']['bucket']['name']
+        key = record['s3']['object']['key']
+        
+        if not bucket or not key:
+            raise ProgressProcessingError("Empty bucket name or key")
+            
+        return (bucket, key)
+    except KeyError as e:
+        raise ProgressProcessingError(f"Missing required field in event: {str(e)}")
+
+def extract_workflow_id(key):
+    """
+    Extracts workflow ID from the key path
+    Expected format: progress/{workflow_id}/progress.json
+    """
+    try:
+        parts = key.split('/')
+        if len(parts) >= 3:
+            return parts[1]
+        else:
+            logger.warning(f"Could not extract workflow ID from key: {key}")
+            return 'unknown'
+    except Exception as e:
+        logger.warning(f"Error extracting workflow ID: {str(e)}")
+        return 'unknown'
+
+def get_progress_data(bucket, key, max_retries=MAX_RETRIES):
+    """
+    Retrieves and parses progress data from S3 with retry logic
+    Returns dict or raises ProgressProcessingError
+    """
+    retry_count = 0
+    last_exception = None
+    
+    while retry_count < max_retries:
+        try:
+            response = s3.get_object(Bucket=bucket, Key=key)
+            data = response['Body'].read().decode('utf-8')
+            
+            try:
+                return json.loads(data)
+            except json.JSONDecodeError as je:
+                # Try to recover corrupted JSON if possible
+                logger.warning(f"Error parsing JSON: {str(je)}. Attempting recovery...")
+                
+                # Check if backup exists
+                backup_key = f"{key}{BACKUP_SUFFIX}"
+                try:
+                    backup_response = s3.get_object(Bucket=bucket, Key=backup_key)
+                    backup_data = backup_response['Body'].read().decode('utf-8')
+                    return json.loads(backup_data)
+                except Exception:
+                    logger.warning("No valid backup found. Creating empty progress data.")
+                    # Return empty but valid progress data
+                    return {
+                        "status": "unknown",
+                        "percent_complete": 0,
+                        "processes": {
+                            "completed": 0,
+                            "total": 0
+                        }
+                    }
+                
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            
+            # Don't retry if the object doesn't exist
+            if error_code == 'NoSuchKey':
+                raise ProgressProcessingError(f"Progress file does not exist: {key}")
+            
+            # For other client errors, retry
+            logger.warning(f"S3 client error (attempt {retry_count+1}/{max_retries}): {str(e)}")
+            last_exception = e
+            retry_count += 1
+            time.sleep(0.5 * retry_count)  # Exponential backoff
+            
+        except Exception as e:
+            logger.warning(f"Error getting progress data (attempt {retry_count+1}/{max_retries}): {str(e)}")
+            last_exception = e
+            retry_count += 1
+            time.sleep(0.5 * retry_count)  # Exponential backoff
+    
+    # If we've exhausted all retries
+    if last_exception:
+        raise ProgressProcessingError(f"Failed to get progress data after {max_retries} attempts: {str(last_exception)}")
+    else:
+        raise ProgressProcessingError(f"Unknown error getting progress data after {max_retries} attempts")
+
+def prepare_dashboard_data(progress_data, workflow_id):
+    """
+    Prepares dashboard data from progress data
+    Uses safe getters with defaults for any missing data
+    """
+    # Create a dictionary with all expected fields to ensure dashboard doesn't break
+    dashboard_data = {
+        'timestamp': int(time.time()),
+        'update_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'workflow_id': workflow_id,
+        'percent_complete': progress_data.get('percent_complete', DEFAULT_PERCENT),
+        'status': progress_data.get('status', DEFAULT_STATUS),
+        'elapsed_time': progress_data.get('elapsed_time_formatted', DEFAULT_TIME_FORMAT),
+        'remaining_time': progress_data.get('estimated_remaining_formatted', DEFAULT_TIME_FORMAT),
+        'start_time_human': progress_data.get('start_time_human', 'Not available'),
+        'processes': {
+            'completed': progress_data.get('completed_count', 0),
+            'total': progress_data.get('total_processes', 0),
+            'list': progress_data.get('processes', {})
+        }
+    }
+    
+    # Validate percent complete is a number between 0-100
+    try:
+        percent = float(dashboard_data['percent_complete'])
+        dashboard_data['percent_complete'] = max(0, min(100, percent))
+    except (ValueError, TypeError):
+        dashboard_data['percent_complete'] = 0
+        
+    # Validate status is a known value
+    valid_statuses = ['waiting', 'running', 'completed', 'failed']
+    if dashboard_data['status'] not in valid_statuses:
+        dashboard_data['status'] = DEFAULT_STATUS
+        
+    return dashboard_data
+
+def update_dashboard(bucket, dashboard_data, workflow_id, max_retries=MAX_RETRIES):
+    """
+    Updates dashboard data files in S3 with retry logic
+    Returns True on success or raises ProgressProcessingError
+    """
+    # Prepare JSON data
+    try:
+        json_data = json.dumps(dashboard_data, indent=2)
+        content_type = 'application/json'
+    except Exception as e:
+        raise ProgressProcessingError(f"Failed to serialize dashboard data: {str(e)}")
+    
+    # Define keys for workflow-specific and latest progress
+    dashboard_key = f'dashboard/data/progress_{workflow_id}.json'
+    latest_key = 'dashboard/data/latest_progress.json'
+    keys_to_update = [dashboard_key, latest_key]
+    
+    # Update both files with retry logic
+    for key in keys_to_update:
+        retry_count = 0
+        success = False
+        
+        while not success and retry_count < max_retries:
+            try:
+                # Create backup of existing file first if it exists
+                try:
+                    existing = s3.get_object(Bucket=bucket, Key=key)
+                    backup_key = f"{key}{BACKUP_SUFFIX}"
+                    s3.put_object(
+                        Bucket=bucket,
+                        Key=backup_key,
+                        Body=existing['Body'].read(),
+                        ContentType=content_type
+                    )
+                except ClientError:
+                    # Object doesn't exist yet, no backup needed
+                    pass
+                    
+                # Update the file
+                s3.put_object(
+                    Bucket=bucket,
+                    Key=key,
+                    Body=json_data,
+                    ContentType=content_type
+                )
+                success = True
+                
+            except Exception as e:
+                logger.warning(f"Error updating dashboard file {key} (attempt {retry_count+1}/{max_retries}): {str(e)}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    time.sleep(0.5 * retry_count)  # Exponential backoff
+        
+        if not success:
+            raise ProgressProcessingError(f"Failed to update dashboard file {key} after {max_retries} attempts")
+    
+    logger.info(f"Dashboard data updated successfully at {dashboard_key} and {latest_key}")
+    return True
+
+def send_notification(status, workflow_id, progress_data):
+    """
+    Sends SNS notification based on workflow status if SNS_TOPIC_ARN is configured
+    """
+    if not sns or 'SNS_TOPIC_ARN' not in os.environ:
+        logger.info("SNS notifications disabled - no SNS_TOPIC_ARN configured")
+        return False
+        
+    topic_arn = os.environ['SNS_TOPIC_ARN']
+    
+    try:
+        # Only send notifications for completed or failed workflows
+        if status not in ['completed', 'failed']:
+            return False
+            
+        # Create notification message
+        subject = f"Microbiome Workflow {workflow_id} {status.capitalize()}"
+        
+        message = f"Workflow {workflow_id} {status}!\n\n"
+        message += f"Status: {status}\n"
+        
+        if status == 'completed':
+            message += f"Completed at: {progress_data.get('end_time_human', 'unknown')}\n"
+            message += f"Total runtime: {progress_data.get('total_runtime_formatted', 'unknown')}\n"
+        elif status == 'failed':
+            message += f"Failed at: {progress_data.get('end_time_human', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}\n"
+            message += f"Error: {progress_data.get('error_message', 'Unknown error')}\n"
+        
+        message += f"\nSee dashboard for full results."
+        
+        # Send notification
+        response = sns.publish(
+            TopicArn=topic_arn,
+            Subject=subject,
+            Message=message
+        )
+        
+        logger.info(f"Sent {status} notification: {response['MessageId']}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to send {status} notification: {str(e)}")
+        return False
 
 def lambda_handler(event, context):
     """
@@ -19,13 +277,15 @@ def lambda_handler(event, context):
     This function is triggered by S3 events when progress files are updated.
     It processes the progress data and can send notifications or update dashboard data.
     """
-    logger.info(f"Received event: {json.dumps(event)}")
+    logger.info(f"Progress notification Lambda invoked")
     
     try:
-        # Extract bucket and key from the event
-        bucket = event['Records'][0]['s3']['bucket']['name']
-        key = event['Records'][0]['s3']['object']['key']
+        # Log truncated event to prevent excessive log size
+        event_str = json.dumps(event)
+        logger.info(f"Received event: {event_str[:500]}{'...' if len(event_str) > 500 else ''}")
         
+        # Validate and extract bucket and key
+        bucket, key = validate_event(event)
         logger.info(f"Processing update from {bucket}/{key}")
         
         # Only process progress.json updates
@@ -36,72 +296,54 @@ def lambda_handler(event, context):
                 'body': json.dumps('Skipped non-progress file')
             }
         
-        # Get the workflow ID from the key
-        # Expected format: progress/{workflow_id}/progress.json
-        workflow_id = key.split('/')[1] if len(key.split('/')) >= 3 else 'unknown'
+        # Extract workflow ID from key
+        workflow_id = extract_workflow_id(key)
         
-        # Download the progress file
-        response = s3.get_object(Bucket=bucket, Key=key)
-        progress_data = json.loads(response['Body'].read().decode('utf-8'))
+        # Get progress data
+        progress_data = get_progress_data(bucket, key)
         
         # Log progress information
-        logger.info(f"Workflow {workflow_id} progress: {progress_data.get('percent_complete', 0)}% complete")
-        logger.info(f"Status: {progress_data.get('status', 'unknown')}")
-        logger.info(f"Elapsed time: {progress_data.get('elapsed_time_formatted', 'unknown')}")
-        logger.info(f"Estimated remaining: {progress_data.get('estimated_remaining_formatted', 'unknown')}")
+        status = progress_data.get('status', DEFAULT_STATUS)
+        percent = progress_data.get('percent_complete', DEFAULT_PERCENT)
+        logger.info(f"Workflow {workflow_id} progress: {percent}% complete, status: {status}")
+        logger.info(f"Elapsed: {progress_data.get('elapsed_time_formatted', DEFAULT_TIME_FORMAT)}, "
+                   f"Remaining: {progress_data.get('estimated_remaining_formatted', DEFAULT_TIME_FORMAT)}")
         
-        # Prepare data for dashboard
-        dashboard_data = {
-            'timestamp': int(time.time()),
-            'update_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'workflow_id': workflow_id,
-            'percent_complete': progress_data.get('percent_complete', 0),
-            'status': progress_data.get('status', 'unknown'),
-            'elapsed_time': progress_data.get('elapsed_time_formatted', 'unknown'),
-            'remaining_time': progress_data.get('estimated_remaining_formatted', 'unknown'),
-            'processes': {
-                'completed': progress_data.get('completed_count', 0),
-                'total': progress_data.get('total_processes', 0)
-            }
-        }
+        # Prepare and update dashboard data
+        dashboard_data = prepare_dashboard_data(progress_data, workflow_id)
+        update_dashboard(bucket, dashboard_data, workflow_id)
         
-        # Upload dashboard data for real-time display
-        dashboard_key = f'dashboard/data/progress_{workflow_id}.json'
-        s3.put_object(
-            Bucket=bucket,
-            Key=dashboard_key,
-            Body=json.dumps(dashboard_data, indent=2),
-            ContentType='application/json'
-        )
-        
-        # Also update the latest progress file for the dashboard
-        latest_key = 'dashboard/data/latest_progress.json'
-        s3.put_object(
-            Bucket=bucket,
-            Key=latest_key,
-            Body=json.dumps(dashboard_data, indent=2),
-            ContentType='application/json'
-        )
-        
-        logger.info(f"Dashboard data updated at {dashboard_key} and {latest_key}")
-        
-        # If workflow completed, create a summary notification
-        if progress_data.get('status') == 'completed':
-            logger.info(f"Workflow {workflow_id} completed successfully!")
-            
-            # You could trigger additional actions here like:
-            # - Send an SNS notification
-            # - Update a DynamoDB table
-            # - Trigger another Lambda function
+        # Send notification if workflow completed or failed
+        if status in ['completed', 'failed']:
+            send_notification(status, workflow_id, progress_data)
         
         return {
             'statusCode': 200,
-            'body': json.dumps('Progress update processed successfully')
+            'body': json.dumps({
+                'message': 'Progress update processed successfully',
+                'workflow_id': workflow_id,
+                'status': status,
+                'percent_complete': percent
+            })
         }
         
+    except ProgressProcessingError as e:
+        logger.error(f"Progress processing error: {str(e)}")
+        return {
+            'statusCode': 400,
+            'body': json.dumps({
+                'error': 'Progress processing error',
+                'message': str(e)
+            })
+        }
     except Exception as e:
-        logger.error(f"Error processing progress update: {str(e)}")
+        # Log the full exception with stack trace for unexpected errors
+        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(traceback.format_exc())
         return {
             'statusCode': 500,
-            'body': json.dumps(f'Error: {str(e)}')
+            'body': json.dumps({
+                'error': 'Internal server error',
+                'message': str(e)
+            })
         }
