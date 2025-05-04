@@ -18,18 +18,124 @@ params.output = "s3://${params.bucket_name}/results"
 params.kraken_db = "s3://${params.bucket_name}/reference/kraken2_db"
 params.metaphlan_db = "s3://${params.bucket_name}/reference/metaphlan_db"
 params.humann_db = "s3://${params.bucket_name}/reference/humann_db"
+params.enable_progress_tracking = true  // Enable real-time progress tracking
+params.workflow_id = UUID.randomUUID().toString()  // Unique ID for this workflow run
+
+// Resource configuration with architecture-specific settings
+params.resources = [
+    // ARM (Graviton) resources
+    'arm64': [
+        'preprocess': [cpus: 4, memory: '8 GB', disk: '20 GB'],
+        'kraken': [cpus: 4, memory: '16 GB', disk: '30 GB', gpu: true],
+        'kraken_cpu': [cpus: 8, memory: '24 GB', disk: '30 GB', gpu: false], // Fallback if no GPU
+        'metaphlan': [cpus: 8, memory: '16 GB', disk: '20 GB'],
+        'humann': [cpus: 8, memory: '16 GB', disk: '20 GB'],
+        'reporting': [cpus: 2, memory: '4 GB', disk: '10 GB']
+    ],
+    // x86_64 resources
+    'x86_64': [
+        'preprocess': [cpus: 8, memory: '16 GB', disk: '20 GB'],
+        'kraken': [cpus: 8, memory: '32 GB', disk: '30 GB', gpu: true],
+        'kraken_cpu': [cpus: 16, memory: '48 GB', disk: '30 GB', gpu: false], // Fallback if no GPU
+        'metaphlan': [cpus: 16, memory: '32 GB', disk: '20 GB'],
+        'humann': [cpus: 16, memory: '32 GB', disk: '20 GB'],
+        'reporting': [cpus: 4, memory: '8 GB', disk: '10 GB']
+    ]
+]
 
 // Print pipeline info
 log.info """
 =========================================
   MICROBIOME DEMO PIPELINE
 =========================================
+  workflow_id      : ${params.workflow_id}
   samples          : ${params.samples}
   output           : ${params.output}
   kraken_db        : ${params.kraken_db}
   metaphlan_db     : ${params.metaphlan_db}
   humann_db        : ${params.humann_db}
+  progress_tracking: ${params.enable_progress_tracking ? 'enabled' : 'disabled'}
 """
+
+// First detect compute resources available to optimize process allocation
+process detect_resources {
+    publishDir "${params.output}/system", mode: 'copy'
+    
+    output:
+    path('resources.json') into resources_ch
+    
+    script:
+    template 'resource_detector.sh'
+}
+
+// Parse resources.json file to extract architecture and GPU availability
+def getResourceConfig(resources_file, process_name) {
+    def json = new groovy.json.JsonSlurper().parseText(resources_file.text)
+    def arch = json.architecture ?: 'x86_64'  // Default to x86_64
+    def gpu_count = json.gpu ?: 0
+    
+    // Special handling for Kraken based on GPU availability
+    if (process_name == 'kraken' && gpu_count == 0) {
+        // Use CPU-specific resources when no GPU is available
+        return params.resources[arch]['kraken_cpu']
+    }
+    
+    return params.resources[arch][process_name]
+}
+
+// Check if GPU is available based on resources
+def hasGpu(resources_file) {
+    def json = new groovy.json.JsonSlurper().parseText(resources_file.text)
+    return (json.gpu as Integer) > 0
+}
+
+// Make the resources available to all processes
+resources_ch.into { 
+    resources_preprocess; 
+    resources_kraken; 
+    resources_kraken_reports;
+    resources_metaphlan; 
+    resources_merge_metaphlan;
+    resources_merge_humann;
+    resources_diversity;
+    resources_summary;
+    resources_upload;
+    resources_cost_report
+}
+
+// Process to initialize progress tracking
+if (params.enable_progress_tracking) {
+    process initialize_progress {
+        executor 'local'
+        
+        output:
+        val(total_processes) into progress_init_ch
+        
+        exec:
+        // Count the total number of processes in the workflow
+        // This is a fixed count based on our workflow definition
+        // Plus one for each sample in the paired-end reads
+        def fixed_processes = 8  // detect_resources, kraken_reports, merge_metaphlan, merge_humann, diversity_analysis, create_summary, upload_results, generate_cost_report
+        def sample_count = 0
+        
+        try {
+            def samples_file = file(params.samples)
+            if (samples_file.exists()) {
+                sample_count = samples_file.readLines().size() - 1  // -1 for header
+                if (sample_count < 0) sample_count = 0  // Safety check
+            }
+        } catch (Exception e) {
+            log.warn "Could not read sample count from ${params.samples}: ${e.message}"
+        }
+        
+        // Calculate total process count
+        // Each sample undergoes preprocess_reads, taxonomic_classification_kraken, and metaphlan_analysis
+        def total = fixed_processes + (sample_count * 3)
+        total_processes = total
+        
+        log.info "Initializing progress tracking for workflow ${params.workflow_id} with ${total_processes} total processes"
+    }
+}
 
 // Create input channel from samples CSV
 Channel
@@ -40,18 +146,45 @@ Channel
 
 // Pre-process reads (QC, adapter trimming)
 process preprocess_reads {
-    cpus 4
-    memory '8 GB'
     tag { sample_id }
     errorStrategy { task.attempt <= 3 ? 'retry' : 'terminate' }
     maxRetries 3
     
     input:
     tuple val(sample_id), val(body_site), path(fastq_1), path(fastq_2) from fastq_files
+    path resources from resources_preprocess.first()
+    val total_processes from progress_init_ch.value() // For progress tracking
+    
+    // Dynamic resource allocation
+    cpus { getResourceConfig(resources, 'preprocess').cpus }
+    memory { getResourceConfig(resources, 'preprocess').memory }
     
     output:
     tuple val(sample_id), val(body_site), path("${sample_id}_1.trimmed.fastq.gz"), path("${sample_id}_2.trimmed.fastq.gz") into trimmed_reads
     tuple val(sample_id), path("${sample_id}_fastqc") into fastqc_results
+    
+    // Progress tracking script before and after the main process
+    beforeScript:
+    params.enable_progress_tracking ? 
+    """
+    export PROCESS_NAME="preprocess_reads_${sample_id}"
+    export PROCESS_STATUS="started"
+    export WORKFLOW_ID="${params.workflow_id}"
+    export BUCKET_NAME="${params.bucket_name}"
+    export TOTAL_PROCESSES="${total_processes}"
+    bash -c 'bash \$(aws s3 cp s3://${params.bucket_name}/workflow/templates/progress_tracker.sh - | cat)' || true
+    """ : ""
+    
+    afterScript:
+    params.enable_progress_tracking ?
+    """
+    export PROCESS_NAME="preprocess_reads_${sample_id}"
+    export PROCESS_STATUS="\${success:completed:failed}"
+    export WORKFLOW_ID="${params.workflow_id}"
+    export BUCKET_NAME="${params.bucket_name}"
+    export TOTAL_PROCESSES="${total_processes}"
+    bash -c 'bash \$(aws s3 cp s3://${params.bucket_name}/workflow/templates/progress_tracker.sh - | cat)' || true
+    """ : ""
     
     script:
     """
@@ -96,14 +229,19 @@ process preprocess_reads {
 // Split for different analysis paths
 trimmed_reads.into { reads_for_kraken; reads_for_metaphlan }
 
-// Taxonomic classification with Kraken2 (GPU-accelerated)
+// Taxonomic classification with Kraken2 (GPU-accelerated when available)
 process taxonomic_classification_kraken {
-    cpus 4
-    memory '16 GB'
-    accelerator 1  // Request 1 GPU
     tag { sample_id }
     errorStrategy { task.attempt <= 3 ? 'retry' : 'terminate' }
     maxRetries 3
+    
+    input:
+    path resources from resources_kraken.first()
+    
+    // Dynamic resource allocation
+    accelerator { hasGpu(resources) ? 1 : 0 }  // Request GPU only if available
+    cpus { getResourceConfig(resources, 'kraken').cpus }
+    memory { getResourceConfig(resources, 'kraken').memory }
     
     input:
     tuple val(sample_id), val(body_site), path(trimmed_1), path(trimmed_2) from reads_for_kraken
@@ -126,27 +264,30 @@ process taxonomic_classification_kraken {
     echo "Downloading Kraken2 database for sample ${sample_id}..."
     mkdir -p kraken2_db
     
-    # Use retry logic for AWS S3 download
+    # Use retry logic for direct S3 access to the database
     max_attempts=3
     attempt=1
     download_successful=false
     
+    echo "Directly accessing Kraken2 database from S3 (no transit through user's computer)..."
     while [ \$attempt -le \$max_attempts ] && [ "\$download_successful" = "false" ]; do
-        echo "Attempt \$attempt of \$max_attempts to download Kraken2 database..."
+        echo "Attempt \$attempt of \$max_attempts to directly access Kraken2 database..."
         if aws s3 cp --recursive ${params.kraken_db}/ kraken2_db/ --quiet; then
             download_successful=true
-            echo "Database download successful."
+            echo "Database direct access successful."
         else
-            echo "Database download failed. Retrying in 10 seconds..."
+            echo "Database access failed. Retrying in 10 seconds..."
             sleep 10
             attempt=\$((attempt+1))
         fi
     done
     
     if [ "\$download_successful" = "false" ]; then
-        echo "ERROR: Failed to download Kraken2 database after \$max_attempts attempts."
+        echo "ERROR: Failed to access Kraken2 database after \$max_attempts attempts."
         exit 1
     fi
+    
+    echo "Successfully accessed Kraken2 database directly from S3 to compute node."
     
     # Verify database files exist
     if [ ! -f "kraken2_db/hash.k2d" ] || [ ! -f "kraken2_db/opts.k2d" ]; then
@@ -154,14 +295,23 @@ process taxonomic_classification_kraken {
         exit 1
     fi
     
-    # Run Kraken2 with GPU acceleration
-    echo "Running Kraken2 with GPU acceleration for sample ${sample_id}..."
-    kraken2 --db kraken2_db \
-            --paired ${trimmed_1} ${trimmed_2} \
-            --output ${sample_id}.kraken.out \
-            --report ${sample_id}.kreport \
-            --use-gpu \
-            --threads ${task.cpus}
+    # Check if GPU is available and run appropriate Kraken2 command
+    if command -v nvidia-smi &> /dev/null && [ \$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l) -gt 0 ]; then
+        echo "Running Kraken2 with GPU acceleration for sample ${sample_id}..."
+        kraken2 --db kraken2_db \
+                --paired ${trimmed_1} ${trimmed_2} \
+                --output ${sample_id}.kraken.out \
+                --report ${sample_id}.kreport \
+                --use-gpu \
+                --threads ${task.cpus}
+    else
+        echo "Running Kraken2 in CPU-only mode for sample ${sample_id}..."
+        kraken2 --db kraken2_db \
+                --paired ${trimmed_1} ${trimmed_2} \
+                --output ${sample_id}.kraken.out \
+                --report ${sample_id}.kreport \
+                --threads ${task.cpus}
+    fi
     
     # Verify output files were created
     if [ ! -s "${sample_id}.kraken.out" ] || [ ! -s "${sample_id}.kreport" ]; then
@@ -176,11 +326,13 @@ process taxonomic_classification_kraken {
 
 // Generate Kraken2 summary reports
 process kraken_reports {
-    cpus 2
-    memory '4 GB'
-    
     input:
+    path resources from resources_kraken_reports.first()
     path('reports/*') from kraken_results.map { it[3] }.collect()
+    
+    // Dynamic resource allocation
+    cpus { getResourceConfig(resources, 'reporting').cpus }
+    memory { getResourceConfig(resources, 'reporting').memory }
     path('metadata/*') from kraken_results.map { tuple(it[0], it[1]) }.collectFile(name: 'sample_metadata.csv', newLine: true) { 
         [it[0], it[1]].join(',') 
     }
@@ -285,12 +437,15 @@ EOF
 
 // Taxonomic and functional profiling with MetaPhlAn and HUMAnN
 process metaphlan_analysis {
-    cpus 8
-    memory '16 GB'
     tag { sample_id }
     
     input:
     tuple val(sample_id), val(body_site), path(trimmed_1), path(trimmed_2) from reads_for_metaphlan
+    path resources from resources_metaphlan.first()
+    
+    // Dynamic resource allocation
+    cpus { getResourceConfig(resources, 'metaphlan').cpus }
+    memory { getResourceConfig(resources, 'metaphlan').memory }
     
     output:
     tuple val(sample_id), val(body_site), path("${sample_id}.metaphlan.tsv") into metaphlan_results
@@ -301,8 +456,10 @@ process metaphlan_analysis {
     # Concatenate paired reads for MetaPhlAn
     cat ${trimmed_1} ${trimmed_2} > ${sample_id}.fastq.gz
     
-    # Download MetaPhlAn database
+    # Download MetaPhlAn database directly to the compute node (no transit through user's computer)
+    echo "Directly accessing MetaPhlAn database (downloading directly to compute node)..."
     metaphlan --install --bowtie2db metaphlan_db
+    echo "MetaPhlAn database setup complete - direct installation to compute node."
     
     # Run MetaPhlAn
     metaphlan ${sample_id}.fastq.gz \
@@ -312,12 +469,14 @@ process metaphlan_analysis {
               --output_file ${sample_id}.metaphlan.tsv \
               --bowtie2out ${sample_id}.metaphlan.bowtie2.bz2
     
-    # Run HUMAnN for functional profiling
+    # Run HUMAnN for functional profiling with direct database access
+    echo "Directly accessing HUMAnN databases from S3 (no transit through user's computer)..."
     humann --input ${sample_id}.fastq.gz \
            --output humann_output \
            --nucleotide-database ${params.humann_db}/chocophlan \
            --protein-database ${params.humann_db}/uniref \
            --metaphlan-options "--bowtie2db metaphlan_db --nproc ${task.cpus}" \
+           --verbose \
            --threads ${task.cpus}
     
     # Copy and rename HUMAnN outputs
@@ -331,11 +490,13 @@ process metaphlan_analysis {
 
 // Merge MetaPhlAn results
 process merge_metaphlan {
-    cpus 2
-    memory '4 GB'
-    
     input:
     path('profiles/*') from metaphlan_results.map { it[2] }.collect()
+    path resources from resources_merge_metaphlan.first()
+    
+    // Dynamic resource allocation
+    cpus { getResourceConfig(resources, 'reporting').cpus }
+    memory { getResourceConfig(resources, 'reporting').memory }
     path('metadata/*') from metaphlan_results.map { tuple(it[0], it[1]) }.collectFile(name: 'sample_metadata.csv', newLine: true) { 
         [it[0], it[1]].join(',') 
     }
@@ -377,11 +538,13 @@ EOF
 
 // Merge and analyze HUMAnN results
 process merge_humann {
-    cpus 4
-    memory '8 GB'
-    
     input:
     path('genefamilies/*') from humann_results.map { it[2] }.collect()
+    path resources from resources_merge_humann.first()
+    
+    // Dynamic resource allocation
+    cpus { getResourceConfig(resources, 'humann').cpus }
+    memory { getResourceConfig(resources, 'humann').memory }
     path('pathabundance/*') from humann_results.map { it[3] }.collect()
     path('metadata/*') from humann_results.map { tuple(it[0], it[1]) }.collectFile(name: 'sample_metadata.csv', newLine: true) { 
         [it[0], it[1]].join(',') 
@@ -414,11 +577,13 @@ process merge_humann {
 
 // Calculate diversity metrics
 process diversity_analysis {
-    cpus 4
-    memory '8 GB'
-    
     input:
     path(metaphlan_merged) from metaphlan_merged
+    path resources from resources_diversity.first()
+    
+    // Dynamic resource allocation
+    cpus { getResourceConfig(resources, 'reporting').cpus }
+    memory { getResourceConfig(resources, 'reporting').memory }
     path('metadata/*') from metaphlan_results.map { tuple(it[0], it[1]) }.collectFile(name: 'sample_metadata.csv', newLine: true) { 
         [it[0], it[1]].join(',') 
     }
@@ -550,12 +715,14 @@ EOF
 
 // Create summary reports for dashboard
 process create_summary {
-    cpus 2
-    memory '4 GB'
-    
     input:
     path(kraken_species_counts) from kraken_species_counts
-path(kraken_phylum_counts) from kraken_phylum_counts
+    path(kraken_phylum_counts) from kraken_phylum_counts
+    path resources from resources_summary.first()
+    
+    // Dynamic resource allocation
+    cpus { getResourceConfig(resources, 'reporting').cpus }
+    memory { getResourceConfig(resources, 'reporting').memory }
     path(metaphlan_merged) from metaphlan_merged
     path(humann_pathabundance_relab) from humann_pathabundance_relab
     path(alpha_diversity) from alpha_diversity
@@ -798,6 +965,68 @@ workflow.onComplete {
     exit status : ${workflow.exitStatus}
     =========================================
     """
+    
+    // Update progress tracking on workflow completion
+    if (params.enable_progress_tracking) {
+        def status = workflow.success ? "completed" : "failed"
+        def timestamp = System.currentTimeMillis() / 1000
+        def dateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+        def currentDate = new Date()
+        def humanTime = dateFormat.format(currentDate)
+        
+        // Create final workflow progress update
+        def cmd = """
+        export PROCESS_NAME="workflow_complete"
+        export PROCESS_STATUS="${status}"
+        export WORKFLOW_ID="${params.workflow_id}"
+        export BUCKET_NAME="${params.bucket_name}"
+        export TIMESTAMP="${timestamp}"
+        export HUMAN_TIME="${humanTime}"
+        export TOTAL_PROCESSES="1"
+        bash -c 'bash \$(aws s3 cp s3://${params.bucket_name}/workflow/templates/progress_tracker.sh - | cat)' || true
+        """
+        
+        try {
+            def sout = new StringBuilder()
+            def serr = new StringBuilder()
+            def proc = cmd.execute()
+            proc.consumeProcessOutput(sout, serr)
+            proc.waitForOrKill(30000)
+            log.info "Workflow completion status updated: ${status}"
+            if (serr.toString()) {
+                log.warn "Progress update error: ${serr.toString()}"
+            }
+        } catch (Exception e) {
+            log.warn "Failed to update workflow completion status: ${e.message}"
+        }
+        
+        // Create a final summary file with workflow stats
+        def summary = [
+            workflow_id: params.workflow_id,
+            status: status,
+            completed_at: humanTime,
+            duration_ms: workflow.duration.toMillis(),
+            duration_formatted: workflow.duration.toString(),
+            success: workflow.success,
+            exit_status: workflow.exitStatus,
+            error_message: workflow.errorMessage ?: null,
+            error_report: workflow.errorReport ?: null
+        ]
+        
+        try {
+            def json = new groovy.json.JsonOutput().toJson(summary)
+            def prettyJson = groovy.json.JsonOutput.prettyPrint(json)
+            def summaryFile = new File("${workflow.launchDir}/workflow_summary.json")
+            summaryFile.text = prettyJson
+            
+            def cmd2 = "aws s3 cp ${workflow.launchDir}/workflow_summary.json s3://${params.bucket_name}/progress/${params.workflow_id}/workflow_summary.json"
+            def proc2 = cmd2.execute()
+            proc2.waitForOrKill(30000)
+            log.info "Workflow summary uploaded to S3"
+        } catch (Exception e) {
+            log.warn "Failed to create workflow summary: ${e.message}"
+        }
+    }
 }
 
 // AWS Batch specific settings
@@ -807,9 +1036,26 @@ process {
     container = 'public.ecr.aws/lts/microbiome-tools:latest'
     
     withName: 'taxonomic_classification_kraken' {
-        queue = 'microbiome-demo-gpu-queue'
+        // Dynamic queue selection based on GPU availability
+        // This will be overridden at runtime based on resource detection
+        queue = { task.accelerator > 0 ? 'microbiome-demo-gpu-queue' : 'microbiome-demo-queue' }
         container = 'public.ecr.aws/lts/kraken2-gpu:latest'
     }
+    
+    withName: 'detect_resources' {
+        container = 'public.ecr.aws/lts/microbiome-tools:latest'
+        errorStrategy = 'terminate'
+        maxRetries = 1
+    }
+}
+
+// Process-specific optimization details
+manifest {
+    description = 'Microbiome demo pipeline with architecture-aware resource optimization'
+    version = '1.0.0'
+    author = 'Scott Friedman'
+    mainScript = 'microbiome_main.nf'
+    nextflowVersion = '>=21.10.0'
 }
 
 // AWS Batch executor settings
