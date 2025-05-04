@@ -144,33 +144,65 @@ if [ "$LAMBDA_FUNCTION" != "NOT_FOUND" ]; then
     || echo "Could not update Lambda function configuration"
 fi
 
-# Check EC2 instance for dashboard
-echo "Checking EC2 instance for dashboard..."
-EC2_INSTANCE=$(run_aws cloudformation describe-stack-resources \
-  --stack-name $STACK_NAME \
-  --logical-resource-id DashboardInstance \
-  --query "StackResources[0].PhysicalResourceId" \
-  --output text 2>/dev/null || echo "NOT_FOUND")
+# Check dashboard bucket and refresh the dashboard
+echo "Checking dashboard bucket..."
+DASHBOARD_BUCKET=$(get_stack_output "$STACK_NAME" "DashboardBucketName" 2>/dev/null || echo "NOT_FOUND")
 
-if [ "$EC2_INSTANCE" != "NOT_FOUND" ]; then
-  # Get instance status
-  INSTANCE_STATUS=$(run_aws ec2 describe-instance-status \
-    --instance-ids "$EC2_INSTANCE" \
-    --query "InstanceStatuses[0].InstanceStatus.Status" \
-    --output text 2>/dev/null || echo "NOT_FOUND")
+if [ "$DASHBOARD_BUCKET" != "NOT_FOUND" ]; then
+  echo "Refreshing dashboard data..."
   
-  if [ "$INSTANCE_STATUS" == "ok" ]; then
-    echo "Resetting dashboard instance..."
-    # Send SSM command to reset dashboard
-    run_aws ssm send-command \
-      --instance-ids "$EC2_INSTANCE" \
-      --document-name "AWS-RunShellScript" \
-      --parameters "commands=['sudo systemctl restart nginx']" \
-      --comment "Reset dashboard for demo" \
-      || echo "Could not reset dashboard (SSM may not be configured)"
+  # Get current IP for bucket policy
+  CURRENT_IP=$(curl -s https://checkip.amazonaws.com)
+  if [ -z "$CURRENT_IP" ]; then
+    echo "Warning: Could not determine your current IP address for dashboard access."
+    echo "Using fallback access method."
+    CURRENT_IP="0.0.0.0/0"  # Allow from any IP as fallback
   else
-    echo "Dashboard instance is not running or not ready: $INSTANCE_STATUS"
+    echo "Restricting dashboard access to your IP: $CURRENT_IP"
+    CURRENT_IP="$CURRENT_IP/32"  # Convert to CIDR notation
   fi
+
+  # Create and set the bucket policy for IP restriction
+  echo "Updating bucket policy to restrict access to your IP..."
+  cat > /tmp/bucket_policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadGetObjectForSpecificIP",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::${DASHBOARD_BUCKET}/*",
+      "Condition": {
+        "IpAddress": {
+          "aws:SourceIp": "${CURRENT_IP}"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+  # Apply the bucket policy
+  run_aws s3api put-bucket-policy --bucket "$DASHBOARD_BUCKET" --policy file:///tmp/bucket_policy.json || echo "Could not update bucket policy"
+  
+  # Refresh dashboard files
+  if [ -d "./dashboard/" ]; then
+    echo "Re-uploading dashboard files..."
+    run_aws s3 sync --delete "./dashboard/" "s3://${DASHBOARD_BUCKET}/" || echo "Could not sync dashboard files"
+  else
+    echo "Dashboard directory not found - skipping file sync"
+  fi
+  
+  # Display dashboard URL
+  DASHBOARD_URL=$(get_stack_output "$STACK_NAME" "DashboardURL" 2>/dev/null || echo "NOT_FOUND")
+  if [ "$DASHBOARD_URL" != "NOT_FOUND" ]; then
+    echo "Dashboard URL: $DASHBOARD_URL"
+    echo "Note: The dashboard is only accessible from your current IP address: ${CURRENT_IP%/32}"
+  fi
+else
+  echo "Dashboard bucket not found in stack outputs"
 fi
 
 # Use pre-generated backup data if available

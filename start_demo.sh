@@ -51,15 +51,53 @@ run_aws lambda invoke \
   --payload '{"action": "start_demo"}' \
   response.json
 
-# Get dashboard URL from CloudFormation stack
-STACK_DASHBOARD_URL=$(get_stack_output "$STACK_NAME" "DashboardURL")
+# Get dashboard info from CloudFormation stack
+DASHBOARD_URL=$(get_stack_output "$STACK_NAME" "DashboardURL")
+DASHBOARD_BUCKET=$(get_stack_output "$STACK_NAME" "DashboardBucketName")
 
-# CloudFront dashboard URL
-CLOUDFRONT_DASHBOARD_URL="https://d3o4i1szzgcw75.cloudfront.net/"
+# Get current IP for bucket policy
+CURRENT_IP=$(curl -s https://checkip.amazonaws.com)
+if [ -z "$CURRENT_IP" ]; then
+  echo "Warning: Could not determine your current IP address for dashboard access."
+  echo "Using fallback access method."
+  CURRENT_IP="0.0.0.0/0"  # Allow from any IP as fallback
+else
+  echo "Restricting dashboard access to your IP: $CURRENT_IP"
+  CURRENT_IP="$CURRENT_IP/32"  # Convert to CIDR notation
+fi
+
+# Create and set the bucket policy for IP restriction
+echo "Setting bucket policy to restrict access to your IP..."
+cat > /tmp/bucket_policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadGetObjectForSpecificIP",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::${DASHBOARD_BUCKET}/*",
+      "Condition": {
+        "IpAddress": {
+          "aws:SourceIp": "${CURRENT_IP}"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+# Apply the bucket policy
+run_aws s3api put-bucket-policy --bucket "$DASHBOARD_BUCKET" --policy file:///tmp/bucket_policy.json
+
+# Copy dashboard files to the website bucket
+echo "Copying dashboard files to the website bucket..."
+run_aws s3 sync --delete "./dashboard/" "s3://${DASHBOARD_BUCKET}/"
 
 echo ""
 echo "Demo started successfully!"
-echo "S3 Console URL: $STACK_DASHBOARD_URL"
-echo "Dashboard URL: $CLOUDFRONT_DASHBOARD_URL"
+echo "Dashboard URL: $DASHBOARD_URL"
 echo ""
 echo "Please open the dashboard URL in your browser to monitor progress"
+echo "Note: The dashboard is only accessible from your current IP address: ${CURRENT_IP%/32}"

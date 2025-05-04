@@ -513,52 +513,34 @@ Resources:
           JOB_QUEUE: !Ref CPUJobQueue
           JOB_DEFINITION: !Ref NextflowJobDefinition
 
-  # CloudFront Origin Access Identity for Dashboard
-  DashboardOriginAccessIdentity:
-    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+  # Dashboard S3 Bucket
+  DashboardBucket:
+    Type: AWS::S3::Bucket
     Properties:
-      CloudFrontOriginAccessIdentityConfig:
-        Comment: !Sub "OAI for ${AWS::StackName} dashboard"
+      BucketName: !Sub "${DataBucketName}-dashboard"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectTag
+        - Key: Environment
+          Value: !Ref EnvironmentTag
+        - Key: Owner
+          Value: !Ref OwnerTag
 
-  # CloudFront Distribution for Dashboard
-  DashboardDistribution:
-    Type: AWS::CloudFront::Distribution
+  # Public Access Block Configuration for Dashboard Bucket
+  DashboardBucketPublicAccessBlock:
+    Type: AWS::S3::BucketPublicAccessBlock
     Properties:
-      DistributionConfig:
-        Origins:
-          - DomainName: !Sub "${DataBucketName}.s3.amazonaws.com"
-            Id: S3Origin
-            S3OriginConfig:
-              OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${DashboardOriginAccessIdentity}"
-        Enabled: true
-        DefaultRootObject: dashboard/index.html
-        DefaultCacheBehavior:
-          AllowedMethods:
-            - GET
-            - HEAD
-          TargetOriginId: S3Origin
-          ForwardedValues:
-            QueryString: false
-            Cookies:
-              Forward: none
-          ViewerProtocolPolicy: redirect-to-https
-        PriceClass: PriceClass_100
-        ViewerCertificate:
-          CloudFrontDefaultCertificate: true
-        Comment: !Sub "Dashboard for ${AWS::StackName}"
-
-  # S3 Bucket Policy for CloudFront
-  DashboardBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref DataBucketName
-      PolicyDocument:
-        Statement:
-          - Action: s3:GetObject
-            Effect: Allow
-            Resource: !Sub "arn:aws:s3:::${DataBucketName}/dashboard/*"
-            Principal:
-              CanonicalUser: !GetAtt DashboardOriginAccessIdentity.S3CanonicalUserId
+      Bucket: !Ref DashboardBucket
+      BlockPublicAcls: false
+      IgnorePublicAcls: false
+      BlockPublicPolicy: false
+      RestrictPublicBuckets: false
+      
+  # Note: The bucket policy for IP restriction will be set
+  # by the start_demo.sh script to use the user's current IP
 
 Outputs:
   OrchestratorLambdaArn:
@@ -575,7 +557,11 @@ Outputs:
 
   DashboardURL:
     Description: URL for the Microbiome Demo Dashboard
-    Value: !Sub "https://${DashboardDistribution.DomainName}/dashboard/index.html"
+    Value: !GetAtt DashboardBucket.WebsiteURL
+    
+  DashboardBucketName:
+    Description: Name of the dashboard S3 bucket
+    Value: !Ref DashboardBucket
   
   VPCUsed:
     Description: VPC being used for compute environments
