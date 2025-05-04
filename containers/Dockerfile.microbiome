@@ -1,0 +1,42 @@
+FROM microbiome-demo/base:latest
+
+LABEL maintainer="Microbiome Demo Team"
+LABEL description="Microbiome analysis tools including Kraken2, MetaPhlAn, and HUMAnN"
+LABEL version="1.0.0"
+
+# Install microbiome analysis tools
+SHELL ["/bin/bash", "-c"]
+RUN source ${CONDA_DIR}/bin/activate microbiome && \
+    conda install -y -c conda-forge -c bioconda \
+    fastp=0.23.2 \
+    fastqc=0.11.9 \
+    kraken2=2.1.2 \
+    bracken=2.8 \
+    metaphlan=4.0.6 \
+    humann=3.6 \
+    bowtie2=2.4.5 \
+    diamond=2.0.15 && \
+    conda clean -afy
+
+# Create directory for reference databases
+RUN mkdir -p /ref/kraken2 /ref/metaphlan /ref/humann
+
+# Add microbiome-specific scripts
+COPY scripts/microbiome/*.sh /opt/scripts/
+RUN chmod +x /opt/scripts/*.sh
+
+# Set up environment variables for databases
+ENV KRAKEN2_DB_PATH=/ref/kraken2 \
+    METAPHLAN_DB_PATH=/ref/metaphlan \
+    HUMANN_DB_PATH=/ref/humann
+
+# Add Nextflow configuration
+COPY nextflow/* /opt/nextflow/
+ENV NXF_HOME=/opt/nextflow
+
+# Add health check
+HEALTHCHECK --interval=60s --timeout=30s --start-period=60s --retries=3 CMD ["kraken2", "--version"]
+
+# Entry point
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["nextflow", "run", "main.nf", "--help"]

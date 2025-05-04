@@ -1,0 +1,107 @@
+FROM amazonlinux:2 as base
+
+LABEL maintainer="Microbiome Demo Team"
+LABEL description="Base image for microbiome analysis tools"
+LABEL version="1.0.0"
+
+# Install basic dependencies and development tools
+RUN yum update -y && \
+    yum install -y \
+    amazon-linux-extras \
+    tar \
+    gzip \
+    wget \
+    curl \
+    unzip \
+    git \
+    aws-cli \
+    gcc \
+    gcc-c++ \
+    make \
+    bzip2 \
+    bzip2-devel \
+    zlib \
+    zlib-devel \
+    ncurses \
+    ncurses-devel \
+    openssl-devel \
+    xz-devel \
+    readline-devel \
+    libcurl-devel \
+    libxml2-devel \
+    pigz \
+    htop \
+    jq \
+    procps \
+    which \
+    gnupg \
+    bc \
+    less \
+    vim && \
+    yum clean all && \
+    rm -rf /var/cache/yum
+
+# Install Miniconda
+ENV CONDA_DIR /opt/conda
+RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
+    /bin/bash ~/miniconda.sh -b -p ${CONDA_DIR} && \
+    rm ~/miniconda.sh && \
+    ${CONDA_DIR}/bin/conda clean -tipsy && \
+    ln -s ${CONDA_DIR}/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
+    echo ". ${CONDA_DIR}/etc/profile.d/conda.sh" >> ~/.bashrc && \
+    echo "conda activate base" >> ~/.bashrc
+
+ENV PATH="${CONDA_DIR}/bin:${PATH}"
+
+# Set up bioconda channels
+RUN conda config --add channels defaults && \
+    conda config --add channels bioconda && \
+    conda config --add channels conda-forge && \
+    conda config --set channel_priority flexible
+
+# Create a conda environment for microbiome analysis
+RUN conda create -n microbiome python=3.8 && \
+    echo "conda activate microbiome" >> ~/.bashrc
+
+# Set environment variables for AWS Batch
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=UTF-8 \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    AWS_DEFAULT_REGION=us-east-1
+
+# Install common Python packages
+SHELL ["/bin/bash", "-c"]
+RUN source ${CONDA_DIR}/bin/activate microbiome && \
+    conda install -y -c conda-forge -c bioconda \
+    pip \
+    numpy \
+    pandas \
+    scipy \
+    scikit-learn \
+    matplotlib \
+    seaborn \
+    biopython \
+    pysam \
+    boto3 \
+    tqdm \
+    pytest \
+    awscli \
+    nextflow && \
+    conda clean -afy
+
+# Add global scripts directory
+RUN mkdir -p /opt/scripts
+COPY scripts/*.sh /opt/scripts/
+RUN chmod +x /opt/scripts/*.sh
+
+# Set working directory
+WORKDIR /data
+
+# Entry point wrapper
+COPY scripts/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/bin/bash"]

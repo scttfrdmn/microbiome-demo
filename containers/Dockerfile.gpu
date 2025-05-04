@@ -1,0 +1,108 @@
+FROM nvidia/cuda:11.7.1-cudnn8-devel-ubuntu20.04 as build
+
+LABEL maintainer="Microbiome Demo Team"
+LABEL description="GPU-accelerated Kraken2 for taxonomic classification"
+LABEL version="1.0.0"
+
+# Prevent interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    autoconf \
+    build-essential \
+    cmake \
+    curl \
+    git \
+    libbz2-dev \
+    libcurl4-openssl-dev \
+    liblzma-dev \
+    libncurses-dev \
+    libssl-dev \
+    unzip \
+    wget \
+    zlib1g-dev \
+    python3 \
+    python3-pip \
+    awscli \
+    parallel \
+    rsync \
+    bc \
+    time \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build Kraken2 with GPU support from source
+WORKDIR /build
+RUN git clone https://github.com/DerrickWood/kraken2.git && \
+    cd kraken2 && \
+    ./install_kraken2.sh /usr/local/bin
+
+# Install Bracken
+RUN git clone https://github.com/jenniferlu717/Bracken.git && \
+    cd Bracken && \
+    sh install_bracken.sh
+
+# Install NVIDIA Container Toolkit and drivers
+RUN wget -O - https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub | apt-key add - && \
+    apt-get update && apt-get install -y nvidia-container-toolkit && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set up working directories
+RUN mkdir -p /data /reference/kraken2 /reference/bracken
+
+# Set environment variables for GPU
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Create a smaller runtime image
+FROM nvidia/cuda:11.7.1-runtime-ubuntu20.04
+
+# Copy binaries and libraries from build image
+COPY --from=build /usr/local/bin/kraken2* /usr/local/bin/
+COPY --from=build /usr/local/bin/bracken* /usr/local/bin/
+COPY --from=build /usr/bin/aws /usr/bin/
+COPY --from=build /usr/bin/python3* /usr/bin/
+COPY --from=build /usr/lib/python3* /usr/lib/
+COPY --from=build /usr/local/lib/python3* /usr/local/lib/
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    libc6 \
+    libbz2-1.0 \
+    zlib1g \
+    libcurl4 \
+    python3-distutils \
+    python3-minimal \
+    pigz \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up working directories
+RUN mkdir -p /data /reference/kraken2 /reference/bracken
+
+# Add GPU optimization scripts
+COPY scripts/gpu/*.sh /opt/scripts/
+RUN chmod +x /opt/scripts/*.sh
+
+# Add entrypoint script
+COPY scripts/entrypoint_gpu.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Set working directory
+WORKDIR /data
+
+# Set environment variables
+ENV KRAKEN2_DB_PATH=/reference/kraken2 \
+    BRACKEN_DB_PATH=/reference/bracken \
+    CUDA_VISIBLE_DEVICES=0
+
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
+  CMD nvidia-smi && kraken2 --version
+
+# Entry point
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["kraken2", "--help"]
