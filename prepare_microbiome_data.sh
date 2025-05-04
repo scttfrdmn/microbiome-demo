@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025 Scott Friedman. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman. All Rights Reserved.
 #
 # prepare_microbiome_data.sh
 # Script to prepare the Human Microbiome Project data for the 15-minute Microbiome Demo
