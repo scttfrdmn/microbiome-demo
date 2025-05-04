@@ -1,13 +1,57 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Microbiome Real-Time Dashboard</title>
+    <title>Microbiome Real-Time Dashboard (with Auto-Reset)</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
     <script src="js/dashboard_config.js"></script>
+    <script src="js/microbiome_dashboard.js"></script>
     <script>
+        // Define processMicrobiomeSummary function here
+        function processMicrobiomeSummary(summaryData) {
+          console.log('Processing real data from microbiome_summary.json');
+          
+          // Extract taxonomic profile data
+          const taxonomicProfile = summaryData.taxonomic_profile || {};
+          const taxonomyData = taxonomicProfile.phylum_distribution || [];
+          
+          // Convert to the format expected by our charts
+          const formattedTaxonomyData = taxonomyData.map(item => ({
+            name: item.name,
+            value: Math.round(item.abundance * 100) // Convert to percentage
+          }));
+          
+          // Extract sample counts by body site
+          const bodySites = {
+            stool: 0,
+            anterior_nares: 0,
+            buccal_mucosa: 0,
+            other: 0
+          };
+          
+          // Count samples by body site if available
+          if (summaryData.diversity && summaryData.diversity.by_site) {
+            const siteKeys = Object.keys(summaryData.diversity.by_site);
+            const totalSamples = taxonomicProfile.sample_count || 100;
+            const samplesPerSite = Math.ceil(totalSamples / siteKeys.length);
+            
+            siteKeys.forEach(site => {
+              if (bodySites.hasOwnProperty(site)) {
+                bodySites[site] = samplesPerSite;
+              } else {
+                bodySites.other += samplesPerSite;
+              }
+            });
+          }
+          
+          return {
+            taxonomyData: formattedTaxonomyData,
+            sampleCounts: bodySites
+          };
+        }
+        
         // Force no cache for all fetch requests
         window.addEventListener('load', function() {
             console.log("Dashboard loaded at " + new Date().toISOString());
@@ -100,7 +144,7 @@
 </head>
 <body>
     <h1>Microbiome Analysis Dashboard</h1>
-    <div id="version" style="font-size: 12px; color: #666;">Version: 1.1 (Auto-refresh enabled)</div>
+    <div id="version" style="font-size: 12px; color: #666;">Version: 1.2 (Auto-refresh and Auto-reset enabled)</div>
     
     <div class="status-bar">
         <h2>Pipeline Progress</h2>
@@ -226,6 +270,33 @@
             fetchAllData(true);
         }
         
+        // Variable to track job ID for detecting new runs
+        let currentJobId = null;
+        
+        // Reset dashboard when a new job is detected
+        function resetDashboardState() {
+            log("New job detected! Resetting dashboard state...");
+            taxonomyData = null;
+            sampleCounts = null;
+            resourceData = null;
+            progressData = null;
+            
+            // Clear UI elements
+            document.getElementById('progressInfo').textContent = 'Loading...';
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('metaInfo').innerHTML = '';
+            
+            // Force reload all charts
+            if (taxonomyChart) taxonomyChart.destroy();
+            if (sampleChart) sampleChart.destroy();
+            if (resourceChart) resourceChart.destroy();
+            taxonomyChart = null;
+            sampleChart = null;
+            resourceChart = null;
+            
+            log("Dashboard state has been reset for new job");
+        }
+        
         // Fetch all data from JSON files
         async function fetchAllData(manual = false) {
             if (isUpdating && !manual) {
@@ -247,6 +318,17 @@
                 // Process progress data
                 if (progress) {
                     log(`Progress data: completed=${progress.completed_samples}, total=${progress.total_samples}`);
+                    
+                    // Check if this is a new job or if we're transitioning from COMPLETED to another state
+                    if (progress.job_id && progress.job_id !== currentJobId) {
+                        log(`Job ID changed from ${currentJobId} to ${progress.job_id}`);
+                        currentJobId = progress.job_id;
+                        resetDashboardState();
+                    } else if (progressData && progressData.status === "COMPLETED" && progress.status !== "COMPLETED") {
+                        log("Status changed from COMPLETED to another state, resetting dashboard");
+                        resetDashboardState();
+                    }
+                    
                     progressData = progress;
                     updateProgressUI(progress);
                 }
