@@ -5,27 +5,39 @@ set -e  # Exit on error
 
 BUCKET_NAME=${1:-microbiome-demo-bucket-$(LC_CTYPE=C tr -dc 'a-z0-9' < /dev/urandom | fold -w 10 | head -n 1)}
 REGION=${2:-us-east-1}
+AWS_PROFILE=${3:-""}  # Optional AWS profile, empty for default profile
 
 echo "==========================================="
 echo "Microbiome Demo Initial Setup"
 echo "==========================================="
 echo "Target bucket: $BUCKET_NAME"
 echo "Region: $REGION"
+echo "AWS Profile: ${AWS_PROFILE:-Default}"
 echo "==========================================="
 
+# Define AWS CLI command prefix with profile if specified
+AWS_CMD="aws"
+if [ -n "$AWS_PROFILE" ]; then
+  AWS_CMD="aws --profile $AWS_PROFILE"
+fi
+
 # Check AWS CLI configuration
-if ! aws sts get-caller-identity &>/dev/null; then
-  echo "AWS CLI not configured. Please run 'aws configure' first."
+if ! $AWS_CMD sts get-caller-identity &>/dev/null; then
+  if [ -n "$AWS_PROFILE" ]; then
+    echo "AWS CLI not configured for profile '$AWS_PROFILE'. Please run 'aws configure --profile $AWS_PROFILE' first."
+  else
+    echo "AWS CLI not configured. Please run 'aws configure' first."
+  fi
   exit 1
 fi
 
 # Create S3 bucket if it doesn't exist
-if ! aws s3 ls "s3://$BUCKET_NAME" 2>&1 > /dev/null; then
+if ! $AWS_CMD s3 ls "s3://$BUCKET_NAME" 2>&1 > /dev/null; then
   echo "Creating S3 bucket: $BUCKET_NAME"
-  aws s3 mb "s3://$BUCKET_NAME" --region $REGION
+  $AWS_CMD s3 mb "s3://$BUCKET_NAME" --region $REGION
   
   # Enable versioning for recovery
-  aws s3api put-bucket-versioning \
+  $AWS_CMD s3api put-bucket-versioning \
     --bucket $BUCKET_NAME \
     --versioning-configuration Status=Enabled
   
@@ -41,6 +53,7 @@ cat > config.sh << EOF
 BUCKET_NAME=$BUCKET_NAME
 REGION=$REGION
 STACK_NAME=microbiome-demo
+AWS_PROFILE="$AWS_PROFILE"  # AWS CLI profile to use, empty for default
 EOF
 
 chmod +x config.sh

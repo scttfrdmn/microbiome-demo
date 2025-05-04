@@ -8,22 +8,37 @@ set -e  # Exit on error
 if [ -f "./config.sh" ]; then
   source ./config.sh
 else
-  BUCKET_NAME=${1:-omics-demo-bucket}
+  BUCKET_NAME=${1:-microbiome-demo-bucket}
   REGION=${2:-us-east-1}
-  STACK_NAME="omics-demo"
+  AWS_PROFILE=${3:-""}
+  STACK_NAME="microbiome-demo"
+fi
+
+# Source AWS helper functions
+if [ -f "./aws_helper.sh" ]; then
+  source ./aws_helper.sh
+else
+  echo "Error: aws_helper.sh not found. Please run setup.sh first."
+  exit 1
 fi
 
 echo "==========================================="
-echo "Omics Demo Resource Check"
+echo "Microbiome Demo Resource Check"
 echo "==========================================="
 echo "Stack name: $STACK_NAME"
 echo "Bucket: $BUCKET_NAME"
 echo "Region: $REGION"
+if [ -n "$AWS_PROFILE" ]; then
+  echo "AWS Profile: $AWS_PROFILE"
+fi
 echo "==========================================="
+
+# Check AWS credentials
+check_aws_credentials || exit 1
 
 # Check if CloudFormation stack exists and is in the correct state
 echo "Checking CloudFormation stack..."
-STACK_STATUS=$(aws cloudformation describe-stacks \
+STACK_STATUS=$(run_aws cloudformation describe-stacks \
   --stack-name $STACK_NAME \
   --query "Stacks[0].StackStatus" \
   --output text 2>/dev/null || echo "STACK_NOT_FOUND")
@@ -42,13 +57,13 @@ fi
 
 # Check S3 bucket
 echo "Checking S3 bucket..."
-if ! aws s3 ls "s3://$BUCKET_NAME" &>/dev/null; then
+if ! run_aws s3 ls "s3://$BUCKET_NAME" &>/dev/null; then
   echo "❌ S3 bucket not found: $BUCKET_NAME"
   exit 1
 fi
 
 # Check if sample list exists
-if ! aws s3 ls "s3://$BUCKET_NAME/input/sample_list.csv" &>/dev/null; then
+if ! run_aws s3 ls "s3://$BUCKET_NAME/input/sample_list.csv" &>/dev/null; then
   echo "❌ Sample list not found: s3://$BUCKET_NAME/input/sample_list.csv"
   echo "Please run prepare_demo_data.sh first."
   exit 1
@@ -58,13 +73,13 @@ fi
 
 # Get AWS Batch compute environments
 echo "Checking AWS Batch compute environments..."
-BATCH_ENV_CPU=$(aws cloudformation describe-stack-resources \
+BATCH_ENV_CPU=$(run_aws cloudformation describe-stack-resources \
   --stack-name $STACK_NAME \
   --logical-resource-id GravitonComputeEnvironment \
   --query "StackResources[0].PhysicalResourceId" \
   --output text 2>/dev/null || echo "NOT_FOUND")
 
-BATCH_ENV_GPU=$(aws cloudformation describe-stack-resources \
+BATCH_ENV_GPU=$(run_aws cloudformation describe-stack-resources \
   --stack-name $STACK_NAME \
   --logical-resource-id GpuComputeEnvironment \
   --query "StackResources[0].PhysicalResourceId" \
@@ -76,12 +91,12 @@ if [ "$BATCH_ENV_CPU" == "NOT_FOUND" ] || [ "$BATCH_ENV_GPU" == "NOT_FOUND" ]; t
 fi
 
 # Check Batch compute environment status
-CPU_ENV_STATUS=$(aws batch describe-compute-environments \
+CPU_ENV_STATUS=$(run_aws batch describe-compute-environments \
   --compute-environments $BATCH_ENV_CPU \
   --query "computeEnvironments[0].status" \
   --output text)
 
-GPU_ENV_STATUS=$(aws batch describe-compute-environments \
+GPU_ENV_STATUS=$(run_aws batch describe-compute-environments \
   --compute-environments $BATCH_ENV_GPU \
   --query "computeEnvironments[0].status" \
   --output text)
@@ -97,7 +112,7 @@ fi
 echo "Checking AWS service quotas..."
 
 # Check EC2 vCPU Limits
-CPU_LIMIT=$(aws service-quotas get-service-quota \
+CPU_LIMIT=$(run_aws service-quotas get-service-quota \
   --service-code ec2 \
   --quota-code L-1216C47A \
   --query "Quota.Value" \
@@ -113,7 +128,7 @@ else
 fi
 
 # Check GPU instance limits
-GPU_LIMIT=$(aws service-quotas get-service-quota \
+GPU_LIMIT=$(run_aws service-quotas get-service-quota \
   --service-code ec2 \
   --quota-code L-B0FF1D5D \
   --query "Quota.Value" \
@@ -130,10 +145,7 @@ fi
 
 # Check Lambda function
 echo "Checking Lambda orchestrator function..."
-LAMBDA_FUNCTION=$(aws cloudformation describe-stacks \
-  --stack-name $STACK_NAME \
-  --query "Stacks[0].Outputs[?OutputKey=='OrchestratorLambdaArn'].OutputValue" \
-  --output text 2>/dev/null || echo "NOT_FOUND")
+LAMBDA_FUNCTION=$(get_stack_output "$STACK_NAME" "OrchestratorLambdaArn" 2>/dev/null || echo "NOT_FOUND")
 
 if [ "$LAMBDA_FUNCTION" == "NOT_FOUND" ]; then
   echo "❌ Lambda function not found in stack outputs"
@@ -144,10 +156,7 @@ fi
 
 # Check dashboard URL
 echo "Checking dashboard URL..."
-DASHBOARD_URL=$(aws cloudformation describe-stacks \
-  --stack-name $STACK_NAME \
-  --query "Stacks[0].Outputs[?OutputKey=='DashboardURL'].OutputValue" \
-  --output text 2>/dev/null || echo "NOT_FOUND")
+DASHBOARD_URL=$(get_stack_output "$STACK_NAME" "DashboardURL" 2>/dev/null || echo "NOT_FOUND")
 
 if [ "$DASHBOARD_URL" == "NOT_FOUND" ]; then
   echo "❌ Dashboard URL not found in stack outputs"

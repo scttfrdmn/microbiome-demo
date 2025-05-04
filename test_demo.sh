@@ -8,22 +8,37 @@ set -e  # Exit on error
 if [ -f "./config.sh" ]; then
   source ./config.sh
 else
-  BUCKET_NAME=${1:-omics-demo-bucket}
+  BUCKET_NAME=${1:-microbiome-demo-bucket}
   REGION=${2:-us-east-1}
-  STACK_NAME="omics-demo"
+  AWS_PROFILE=${3:-""}
+  STACK_NAME="microbiome-demo"
+fi
+
+# Source AWS helper functions
+if [ -f "./aws_helper.sh" ]; then
+  source ./aws_helper.sh
+else
+  echo "Error: aws_helper.sh not found. Please run setup.sh first."
+  exit 1
 fi
 
 echo "==========================================="
-echo "Omics Demo Test Run"
+echo "Microbiome Demo Test Run"
 echo "==========================================="
 echo "Stack name: $STACK_NAME"
 echo "Bucket: $BUCKET_NAME"
 echo "Region: $REGION"
+if [ -n "$AWS_PROFILE" ]; then
+  echo "AWS Profile: $AWS_PROFILE"
+fi
 echo "==========================================="
+
+# Check AWS credentials
+check_aws_credentials || exit 1
 
 # Check if test sample list exists
 echo "Checking for test sample list..."
-if ! aws s3 ls "s3://$BUCKET_NAME/input/test_sample_list.csv" &>/dev/null; then
+if ! run_aws s3 ls "s3://$BUCKET_NAME/input/test_sample_list.csv" &>/dev/null; then
   echo "❌ Test sample list not found: s3://$BUCKET_NAME/input/test_sample_list.csv"
   echo "Please run prepare_demo_data.sh first."
   exit 1
@@ -31,15 +46,9 @@ fi
 
 # Get CloudFormation stack outputs
 echo "Getting stack outputs..."
-LAMBDA_FUNCTION=$(aws cloudformation describe-stacks \
-  --stack-name $STACK_NAME \
-  --query "Stacks[0].Outputs[?OutputKey=='OrchestratorLambdaArn'].OutputValue" \
-  --output text 2>/dev/null || echo "NOT_FOUND")
+LAMBDA_FUNCTION=$(get_stack_output "$STACK_NAME" "OrchestratorLambdaArn" 2>/dev/null || echo "NOT_FOUND")
 
-DASHBOARD_URL=$(aws cloudformation describe-stacks \
-  --stack-name $STACK_NAME \
-  --query "Stacks[0].Outputs[?OutputKey=='DashboardURL'].OutputValue" \
-  --output text 2>/dev/null || echo "NOT_FOUND")
+DASHBOARD_URL=$(get_stack_output "$STACK_NAME" "DashboardURL" 2>/dev/null || echo "NOT_FOUND")
 
 if [ "$LAMBDA_FUNCTION" == "NOT_FOUND" ]; then
   echo "❌ Lambda function not found in stack outputs"
@@ -60,7 +69,7 @@ EOF
 
 # Invoke Lambda function to start test job
 echo "Invoking Lambda function to start test job..."
-aws lambda invoke \
+run_aws lambda invoke \
   --function-name $LAMBDA_FUNCTION \
   --payload file://test_payload.json \
   response.json
@@ -94,14 +103,14 @@ fi
 
 # Check AWS Batch job queue status
 echo "Checking AWS Batch job queue status..."
-CPU_JOB_QUEUE=$(aws cloudformation describe-stack-resources \
+CPU_JOB_QUEUE=$(run_aws cloudformation describe-stack-resources \
   --stack-name $STACK_NAME \
   --logical-resource-id CPUJobQueue \
   --query "StackResources[0].PhysicalResourceId" \
   --output text 2>/dev/null || echo "NOT_FOUND")
 
 if [ "$CPU_JOB_QUEUE" != "NOT_FOUND" ]; then
-  aws batch describe-job-queues \
+  run_aws batch describe-job-queues \
     --job-queues "$CPU_JOB_QUEUE" \
     --query "jobQueues[0].status" \
     --output text
@@ -117,7 +126,7 @@ sleep 10
 # Poll job status a few times
 for i in {1..5}; do
   if [ -n "$JOB_ID" ]; then
-    JOB_STATUS=$(aws batch describe-jobs \
+    JOB_STATUS=$(run_aws batch describe-jobs \
       --jobs "$JOB_ID" \
       --query "jobs[0].status" \
       --output text 2>/dev/null || echo "UNKNOWN")

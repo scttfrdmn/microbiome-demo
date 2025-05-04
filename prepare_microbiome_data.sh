@@ -11,6 +11,15 @@ else
   # Configuration
   BUCKET_NAME=${1:-microbiome-demo-bucket}  # Use provided bucket name or default
   REGION=${2:-us-east-1}  # Use provided region or default
+  AWS_PROFILE=${3:-""}  # Optional AWS profile
+fi
+
+# Source AWS helper functions
+if [ -f "./aws_helper.sh" ]; then
+  source ./aws_helper.sh
+else
+  echo "Error: aws_helper.sh not found. Please run setup.sh first."
+  exit 1
 fi
 
 SAMPLE_COUNT=100  # Number of samples to include
@@ -31,18 +40,14 @@ mkdir -p $TEMP_DIR
 cd $TEMP_DIR
 
 echo "Creating S3 bucket if it doesn't exist..."
-if ! aws s3 ls "s3://$BUCKET_NAME" 2>&1 > /dev/null; then
-  aws s3 mb "s3://$BUCKET_NAME" --region $REGION
-  echo "Bucket created: $BUCKET_NAME"
-else
-  echo "Bucket already exists: $BUCKET_NAME"
-fi
+check_aws_credentials || exit 1
+ensure_s3_bucket "$BUCKET_NAME" "$REGION"
 
 echo "Retrieving sample list from Human Microbiome Project..."
 # Get list of available samples (focusing on gut microbiome)
-aws s3 ls --recursive "${SOURCE_BUCKET}/HMASM/anterior_nares/" | grep "SRS.*fastq.gz$" > all_samples_nares.txt
-aws s3 ls --recursive "${SOURCE_BUCKET}/HMASM/stool/" | grep "SRS.*fastq.gz$" > all_samples_stool.txt
-aws s3 ls --recursive "${SOURCE_BUCKET}/HMASM/buccal_mucosa/" | grep "SRS.*fastq.gz$" > all_samples_buccal.txt
+run_aws s3 ls --recursive "${SOURCE_BUCKET}/HMASM/anterior_nares/" | grep "SRS.*fastq.gz$" > all_samples_nares.txt
+run_aws s3 ls --recursive "${SOURCE_BUCKET}/HMASM/stool/" | grep "SRS.*fastq.gz$" > all_samples_stool.txt
+run_aws s3 ls --recursive "${SOURCE_BUCKET}/HMASM/buccal_mucosa/" | grep "SRS.*fastq.gz$" > all_samples_buccal.txt
 
 # Combine and filter to get paired-end samples
 cat all_samples_*.txt | grep "_1.fastq.gz" > forward_reads.txt
@@ -88,7 +93,7 @@ while read -r line; do
 done < selected_samples.txt
 
 echo "Uploading sample list to S3..."
-aws s3 cp sample_list.csv "${OUTPUT_PATH}/sample_list.csv"
+s3_copy sample_list.csv "${OUTPUT_PATH}/sample_list.csv"
 
 # Create a manifest file for the CloudFormation template
 echo "Creating resource manifest..."
@@ -107,7 +112,7 @@ cat > manifest.json << EOF
 EOF
 
 # Upload manifest
-aws s3 cp manifest.json "${OUTPUT_PATH}/manifest.json"
+s3_copy manifest.json "${OUTPUT_PATH}/manifest.json"
 
 # Create a simple metadata file with information about body sites
 echo "Creating body site metadata..."
@@ -131,12 +136,12 @@ cat > bodysite_info.json << EOF
 EOF
 
 # Upload body site metadata
-aws s3 cp bodysite_info.json "${OUTPUT_PATH}/bodysite_info.json"
+s3_copy bodysite_info.json "${OUTPUT_PATH}/bodysite_info.json"
 
 # Calculate body site distribution for our sample
 echo "Calculating body site distribution..."
 awk -F',' 'NR>1 {site[$2]++} END {for (s in site) print s","site[s]}' sample_list.csv > bodysite_counts.csv
-aws s3 cp bodysite_counts.csv "${OUTPUT_PATH}/bodysite_counts.csv"
+s3_copy bodysite_counts.csv "${OUTPUT_PATH}/bodysite_counts.csv"
 
 # Download reduced Kraken2 database for demo purposes
 echo "Preparing reference databases..."
@@ -150,7 +155,7 @@ mkdir -p kraken2_db
 cd kraken2_db
 wget https://genome-idx.s3.amazonaws.com/kraken/k2_standard_20230605.tar.gz
 tar -xzf k2_standard_20230605.tar.gz
-aws s3 cp --recursive ./ s3://$BUCKET_NAME/reference/kraken2_db/
+run_aws s3 cp --recursive ./ s3://$BUCKET_NAME/reference/kraken2_db/
 cd ..
 EOF
 
@@ -160,7 +165,7 @@ cat > download_metaphlan_db.sh << EOF
 # Download MetaPhlAn database using the metaphlan utility
 pip install metaphlan
 metaphlan --install --bowtie2db metaphlan_db
-aws s3 cp --recursive metaphlan_db/ s3://$BUCKET_NAME/reference/metaphlan_db/
+run_aws s3 cp --recursive metaphlan_db/ s3://$BUCKET_NAME/reference/metaphlan_db/
 EOF
 
 # Create placeholder for HUMAnN database download script
@@ -170,16 +175,16 @@ cat > download_humann_db.sh << EOF
 pip install humann
 humann_databases --download chocophlan full humann_db
 humann_databases --download uniref uniref90_diamond humann_db
-aws s3 cp --recursive humann_db/ s3://$BUCKET_NAME/reference/humann_db/
+run_aws s3 cp --recursive humann_db/ s3://$BUCKET_NAME/reference/humann_db/
 EOF
 
 # Make scripts executable
 chmod +x download_kraken2_db.sh download_metaphlan_db.sh download_humann_db.sh
 
 # Upload database download scripts to S3
-aws s3 cp download_kraken2_db.sh "${OUTPUT_PATH}/scripts/download_kraken2_db.sh"
-aws s3 cp download_metaphlan_db.sh "${OUTPUT_PATH}/scripts/download_metaphlan_db.sh"
-aws s3 cp download_humann_db.sh "${OUTPUT_PATH}/scripts/download_humann_db.sh"
+s3_copy download_kraken2_db.sh "${OUTPUT_PATH}/scripts/download_kraken2_db.sh"
+s3_copy download_metaphlan_db.sh "${OUTPUT_PATH}/scripts/download_metaphlan_db.sh"
+s3_copy download_humann_db.sh "${OUTPUT_PATH}/scripts/download_humann_db.sh"
 
 # Create a README for the bucket
 cat > README.md << EOF
@@ -208,7 +213,7 @@ This demo requires several reference databases:
 Scripts to download these databases are provided in the /input/scripts/ directory.
 EOF
 
-aws s3 cp README.md "s3://$BUCKET_NAME/README.md"
+s3_copy README.md "s3://$BUCKET_NAME/README.md"
 
 # Create template batch job script for custom initialization
 cat > batch_init.sh << EOF
@@ -230,12 +235,12 @@ docker pull public.ecr.aws/lts/kraken2-gpu:latest
 echo "Batch instance initialization complete"
 EOF
 
-aws s3 cp batch_init.sh "${OUTPUT_PATH}/batch_init.sh"
+s3_copy batch_init.sh "${OUTPUT_PATH}/batch_init.sh"
 
 # Create a test dataset with only 5 samples for quick testing
 echo "Creating test dataset..."
 head -n 6 sample_list.csv > test_sample_list.csv
-aws s3 cp test_sample_list.csv "${OUTPUT_PATH}/test_sample_list.csv"
+s3_copy test_sample_list.csv "${OUTPUT_PATH}/test_sample_list.csv"
 
 # Clean up
 cd ..

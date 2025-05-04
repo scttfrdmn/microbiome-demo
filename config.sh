@@ -7,6 +7,7 @@
 BUCKET_NAME=microbiome-demo-bucket
 REGION=us-east-1
 STACK_NAME=microbiome-demo
+AWS_PROFILE=""  # AWS CLI profile to use, empty for default
 
 # Infrastructure configuration
 COMPUTE_ENV_CPU=microbiome-demo-cpu-env
