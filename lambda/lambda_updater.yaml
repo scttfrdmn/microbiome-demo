@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for Microbiome Demo Dashboard Updater Lambda'
+
+Parameters:
+  DataBucketName:
+    Type: String
+    Description: Name of the S3 bucket containing pipeline data
+    Default: microbiome-demo-bucket
+
+  DashboardBucketName:
+    Type: String
+    Description: Name of the S3 bucket hosting the dashboard
+    Default: microbiome-demo-dashboard
+
+  JobQueueName:
+    Type: String
+    Description: Name of the AWS Batch job queue
+    Default: microbiome-demo-queue
+
+Resources:
+  # DynamoDB Table for storing job and sample data
+  PipelineTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: microbiome-demo-pipeline
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: microbiome-demo
+
+  # IAM Role for the Lambda function
+  ProgressUpdaterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ProgressUpdaterPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - batch:ListJobs
+                  - batch:DescribeJobs
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${DataBucketName}/*'
+                  - !Sub 'arn:aws:s3:::${DashboardBucketName}/*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Scan
+                Resource: !GetAtt PipelineTable.Arn
+
+  # Lambda function for updating dashboard data
+  ProgressUpdaterFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: microbiome-demo-progress-updater
+      Description: Updates dashboard data with validated metrics from pipeline
+      Runtime: python3.9
+      Handler: progress_updater.lambda_handler
+      Role: !GetAtt ProgressUpdaterRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucketName
+          DASHBOARD_BUCKET: !Ref DashboardBucketName
+          JOB_QUEUE: !Ref JobQueueName
+          PIPELINE_TABLE: !Ref PipelineTable
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import time
+          import logging
+          import os
+          import datetime
+          
+          # This is a placeholder. The actual code will be deployed via CI/CD
+          def lambda_handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({'message': 'This is a placeholder. Deploy the actual code.'})
+              }
+      Tags:
+        - Key: Project
+          Value: microbiome-demo
+
+  # CloudWatch Event Rule to trigger the Lambda function every minute
+  ProgressUpdaterScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: microbiome-demo-progress-updater-schedule
+      Description: Trigger progress updater Lambda function every minute
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ProgressUpdaterFunction.Arn
+          Id: ProgressUpdaterTarget
+
+  # Permission for CloudWatch Events to invoke the Lambda function
+  ProgressUpdaterPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProgressUpdaterFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ProgressUpdaterScheduleRule.Arn
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the Progress Updater Lambda function
+    Value: !GetAtt ProgressUpdaterFunction.Arn
+
+  DynamoDBTableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref PipelineTable
+
+  ScheduleRuleArn:
+    Description: ARN of the CloudWatch Events schedule rule
+    Value: !GetAtt ProgressUpdaterScheduleRule.Arn
