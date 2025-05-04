@@ -1,0 +1,132 @@
+{
+  "taxonomic_profile": {
+    "sample_count": 100,
+    "species_count": 3524,
+    "top_species": [
+      {"name": "Bacteroides vulgatus", "abundance": 0.0834},
+      {"name": "Bacteroides uniformis", "abundance": 0.0612},
+      {"name": "Faecalibacterium prausnitzii", "abundance": 0.0578},
+      {"name": "Alistipes putredinis", "abundance": 0.0475},
+      {"name": "Eubacterium rectale", "abundance": 0.0421},
+      {"name": "Bacteroides dorei", "abundance": 0.0387},
+      {"name": "Bacteroides thetaiotaomicron", "abundance": 0.0324},
+      {"name": "Parabacteroides distasonis", "abundance": 0.0298},
+      {"name": "Roseburia intestinalis", "abundance": 0.0245},
+      {"name": "Ruminococcus bromii", "abundance": 0.0225}
+    ],
+    "phylum_distribution": [
+      {"name": "Bacteroidetes", "abundance": 0.4532},
+      {"name": "Firmicutes", "abundance": 0.3871},
+      {"name": "Proteobacteria", "abundance": 0.0823},
+      {"name": "Actinobacteria", "abundance": 0.0421},
+      {"name": "Verrucomicrobia", "abundance": 0.0156},
+      {"name": "Euryarchaeota", "abundance": 0.0087},
+      {"name": "Fusobacteria", "abundance": 0.0065},
+      {"name": "Other", "abundance": 0.0045}
+    ]
+  },
+  "functional_profile": {
+    "pathway_count": 897,
+    "top_pathways": [
+      {"name": "GLYCOLYSIS", "abundance": 0.8923},
+      {"name": "PWY-7219: adenosine ribonucleotides de novo biosynthesis", "abundance": 0.8745},
+      {"name": "PWY-7221: guanosine ribonucleotides de novo biosynthesis", "abundance": 0.8698},
+      {"name": "PWY-7222: guanosine deoxyribonucleotides de novo biosynthesis", "abundance": 0.8645},
+      {"name": "PWY-7220: adenosine deoxyribonucleotides de novo biosynthesis", "abundance": 0.8632},
+      {"name": "PWY-6125: superpathway of guanosine nucleotides biosynthesis", "abundance": 0.8512},
+      {"name": "TCA", "abundance": 0.8456},
+      {"name": "PWY-6737: starch degradation", "abundance": 0.8345},
+      {"name": "PWY-6123: inosine-5'-phosphate biosynthesis", "abundance": 0.8232},
+      {"name": "PWY-7111: pyruvate fermentation to isobutanol", "abundance": 0.7945}
+    ]
+  },
+  "diversity": {
+    "alpha": {
+      "shannon": {
+        "mean": 4.8623,
+        "std": 0.5421,
+        "min": 3.8754,
+        "max": 5.9821
+      },
+      "observed_species": {
+        "mean": 487.3,
+        "std": 112.8,
+        "min": 298,
+        "max": 712
+      }
+    },
+    "beta": {
+      "pcoa": {
+        "pc1_vs_pc2": [
+          {"PC1": 0.245, "PC2": 0.112, "body_site": "stool"},
+          {"PC1": 0.156, "PC2": 0.267, "body_site": "stool"},
+          {"PC1": 0.354, "PC2": 0.098, "body_site": "stool"},
+          {"PC1": -0.234, "PC2": 0.187, "body_site": "buccal_mucosa"},
+          {"PC1": -0.321, "PC2": 0.056, "body_site": "buccal_mucosa"},
+          {"PC1": -0.176, "PC2": 0.134, "body_site": "buccal_mucosa"},
+          {"PC1": -0.098, "PC2": -0.267, "body_site": "anterior_nares"},
+          {"PC1": -0.154, "PC2": -0.341, "body_site": "anterior_nares"},
+          {"PC1": -0.201, "PC2": -0.289, "body_site": "anterior_nares"}
+        ],
+        "variance_explained": [0.32, 0.18, 0.12]
+      }
+    },
+    "by_site": {
+      "stool": {
+        "shannon": {
+          "mean": 5.1234,
+          "std": 0.4123,
+          "min": 4.2341,
+          "max": 5.9821
+        },
+        "observed_species": {
+          "mean": 542.1,
+          "std": 98.3,
+          "min": 387,
+          "max": 712
+        }
+      },
+      "buccal_mucosa": {
+        "shannon": {
+          "mean": 4.3421,
+          "std": 0.5621,
+          "min": 3.8754,
+          "max": 5.1234
+        },
+        "observed_species": {
+          "mean": 412.7,
+          "std": 87.5,
+          "min": 298,
+          "max": 576
+        }
+      },
+      "anterior_nares": {
+        "shannon": {
+          "mean": 3.9876,
+          "std": 0.6234,
+          "min": 3.2145,
+          "max": 4.8765
+        },
+        "observed_species": {
+          "mean": 314.2,
+          "std": 76.4,
+          "min": 231,
+          "max": 487
+        }
+      }
+    }
+  },
+  "execution_metrics": {
+    "cpu_hours": 12.5,
+    "gpu_hours": 2.3,
+    "wall_clock_minutes": 15,
+    "samples_processed": 100,
+    "data_processed_gb": 52.7
+  },
+  "cost_analysis": {
+    "on_premises_cost": 1800.00,
+    "standard_cloud_cost": 120.00,
+    "optimized_aws_cost": 38.50,
+    "cost_savings_percent": 97.9
+  }
+}
