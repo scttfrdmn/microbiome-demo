@@ -31,11 +31,14 @@ OUTPUT_PATH="s3://$BUCKET_NAME/input"
 TEMP_DIR="./temp_data"
 
 echo "========================================="
-echo "Microbiome Demo Data Preparation"
+echo "Microbiome Demo Data Preparation v${VERSION:-unknown}"
 echo "========================================="
 echo "Target bucket: $BUCKET_NAME"
 echo "Region: $REGION"
 echo "Sample count: $SAMPLE_COUNT"
+if [ -n "$AWS_PROFILE" ]; then
+  echo "AWS Profile: $AWS_PROFILE"
+fi
 echo "========================================="
 
 # Create local temp directory

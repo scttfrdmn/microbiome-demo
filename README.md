@@ -1,5 +1,7 @@
 # 15-Minute "Wow" Microbiome Demo on AWS
 
+![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+
 > SPDX-License-Identifier: Apache-2.0  
 > SPDX-FileCopyrightText: Copyright 2025 Scott Friedman. All Rights Reserved.
 
@@ -14,6 +16,16 @@ This demo processes 100 metagenomic samples from the Human Microbiome Project in
 - Cost comparisons between on-premises and optimized cloud approaches
 
 All this is accomplished in 15 minutes for ~$38, compared to 2 weeks and $1,800 with traditional approaches.
+
+## Versioning
+
+This project follows [Semantic Versioning](https://semver.org/). The version format is `MAJOR.MINOR.PATCH`:
+
+- **MAJOR**: Incompatible API changes
+- **MINOR**: Functionality added in a backward-compatible manner
+- **PATCH**: Backward-compatible bug fixes
+
+For the full changelog, see [CHANGELOG.md](CHANGELOG.md).
 
 ## How It Works
 

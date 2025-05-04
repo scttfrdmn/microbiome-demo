@@ -26,7 +26,7 @@ else
 fi
 
 echo "==========================================="
-echo "Microbiome Demo Resource Check"
+echo "Microbiome Demo Resource Check v${VERSION:-unknown}"
 echo "==========================================="
 echo "Stack name: $STACK_NAME"
 echo "Bucket: $BUCKET_NAME"

@@ -6,12 +6,20 @@
 
 set -e  # Exit on error
 
+# Source version information
+if [ -f "./version.sh" ]; then
+  source ./version.sh
+  VERSION=$(get_version)
+else
+  VERSION="unknown"
+fi
+
 BUCKET_NAME=${1:-microbiome-demo-bucket-$(LC_CTYPE=C tr -dc 'a-z0-9' < /dev/urandom | fold -w 10 | head -n 1)}
 REGION=${2:-us-east-1}
 AWS_PROFILE=${3:-""}  # Optional AWS profile, empty for default profile
 
 echo "==========================================="
-echo "Microbiome Demo Initial Setup"
+echo "Microbiome Demo Initial Setup v$VERSION"
 echo "==========================================="
 echo "Target bucket: $BUCKET_NAME"
 echo "Region: $REGION"
@@ -52,11 +60,19 @@ fi
 # Create configuration file for other scripts
 cat > config.sh << EOF
 #!/bin/bash
-# Auto-generated configuration
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman. All Rights Reserved.
+#
+# Auto-generated configuration for Microbiome Demo
+
+# Core configuration
 BUCKET_NAME=$BUCKET_NAME
 REGION=$REGION
 STACK_NAME=microbiome-demo
 AWS_PROFILE="$AWS_PROFILE"  # AWS CLI profile to use, empty for default
+
+# Version information
+VERSION="$VERSION"
 EOF
 
 chmod +x config.sh

@@ -9,6 +9,12 @@ if [ -f "./config.sh" ]; then
   source ./config.sh
 fi
 
+# Source version information if version.sh exists and VERSION is not set
+if [ -z "$VERSION" ] && [ -f "./version.sh" ]; then
+  source ./version.sh
+  VERSION=$(get_version)
+fi
+
 # Function to run AWS CLI commands with profile if specified
 run_aws() {
   local cmd=$1
