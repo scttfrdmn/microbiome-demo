@@ -67,6 +67,51 @@ if run_aws s3 ls "s3://${BUCKET_NAME}/status/progress.json" 2>/dev/null; then
     fi
   fi
   
+  # Check if status is INITIALIZING and provide empty resources and taxonomy
+  STATUS=$(grep -o '"status":"[^"]*"' /tmp/progress.json | cut -d':' -f2 | tr -d '"')
+  if [ "$STATUS" = "INITIALIZING" ]; then
+    echo "Status is INITIALIZING - uploading empty resource and summary files for clean state..."
+    # Create empty resource file
+    cat > /tmp/empty_resources.json << EOF
+{
+  "utilization": [
+    {"time": 0, "cpu": 0, "memory": 0, "gpu": 0}
+  ],
+  "instances": {
+    "cpu": 8,
+    "gpu": 2
+  },
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+}
+EOF
+    
+    # Create empty summary file
+    cat > /tmp/empty_summary.json << EOF
+{
+  "taxonomic_profile": {
+    "phylum_distribution": [
+      {"name": "Initializing...", "abundance": 1.0}
+    ],
+    "sample_count": 100
+  },
+  "diversity": {
+    "shannon_index": 0,
+    "simpson_index": 0,
+    "by_site": {
+      "stool": 0
+    }
+  },
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+}
+EOF
+    
+    # Upload empty resources and summary
+    run_aws s3 cp /tmp/empty_resources.json "s3://${DASHBOARD_BUCKET}/data/resources.json" --content-type "application/json"
+    run_aws s3 cp /tmp/empty_resources.json "s3://${DASHBOARD_BUCKET}/monitoring/resources.json" --content-type "application/json"
+    run_aws s3 cp /tmp/empty_summary.json "s3://${DASHBOARD_BUCKET}/data/summary.json" --content-type "application/json"
+    run_aws s3 cp /tmp/empty_summary.json "s3://${DASHBOARD_BUCKET}/results/summary/microbiome_summary.json" --content-type "application/json"
+  fi
+  
   run_aws s3 cp /tmp/progress.json "s3://${DASHBOARD_BUCKET}/data/progress.json" --content-type "application/json"
   run_aws s3 cp /tmp/progress.json "s3://${DASHBOARD_BUCKET}/status/progress.json" --content-type "application/json"
 else

@@ -277,6 +277,8 @@
         // Reset dashboard when a new job is detected
         function resetDashboardState() {
             log("New job detected! Resetting dashboard state...");
+            
+            // Clear all data
             taxonomyData = null;
             sampleCounts = null;
             resourceData = null;
@@ -287,15 +289,33 @@
             document.getElementById('progressBar').style.width = '0%';
             document.getElementById('metaInfo').innerHTML = '';
             
-            // Force reload all charts
-            if (taxonomyChart) taxonomyChart.destroy();
-            if (sampleChart) sampleChart.destroy();
-            if (resourceChart) resourceChart.destroy();
-            taxonomyChart = null;
-            sampleChart = null;
-            resourceChart = null;
+            // Clear taxonomy table
+            const tableBody = document.querySelector('#taxonomyTable tbody');
+            tableBody.innerHTML = '';
             
-            log("Dashboard state has been reset for new job");
+            // Force reload all charts
+            if (taxonomyChart) {
+                taxonomyChart.destroy();
+                taxonomyChart = null;
+                log("Taxonomy chart destroyed");
+            }
+            
+            if (sampleChart) {
+                sampleChart.destroy();
+                sampleChart = null;
+                log("Sample chart destroyed");
+            }
+            
+            if (resourceChart) {
+                resourceChart.destroy();
+                resourceChart = null;
+                log("Resource chart destroyed");
+            }
+            
+            // Force browser refresh
+            window.location.reload();
+            
+            log("Dashboard state has been completely reset for new job");
         }
         
         // Fetch all data from JSON files
