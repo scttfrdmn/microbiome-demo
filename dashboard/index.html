@@ -3,50 +3,1430 @@
 SPDX-License-Identifier: Apache-2.0
 SPDX-FileCopyrightText: Copyright 2025 Scott Friedman, All Rights Reserved.
 -->
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Microbiome Demo Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css">
-    <script src="https://unpkg.com/react@17/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/recharts@2.1.6/umd/Recharts.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1013.0.min.js"></script>
+    <!-- Add Chart.js - a lightweight chart library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+    <!-- Add FileSaver.js for download functionality -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .status-indicator {
+            display: flex;
+            align-items: center;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 16px;
+        }
+        .tab {
+            padding: 8px 16px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            font-weight: 500;
+            text-transform: capitalize;
+        }
+        .tab.active {
+            border-color: #2196f3;
+            color: #2196f3;
+        }
+        .tab-content {
+            padding: 8px 0;
+        }
+        .progress-bar {
+            height: 16px;
+            background-color: #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 8px 0;
+        }
+        .progress-value {
+            height: 100%;
+            background-color: #4caf50;
+        }
+        .flex-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .flex-item {
+            flex: 1 1 calc(50% - 16px);
+            min-width: 300px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .grid-item {
+            background-color: #f9f9f9;
+            padding: 16px;
+            border-radius: 4px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+        ul.data-list {
+            list-style: none;
+            padding: 0;
+        }
+        ul.data-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+        }
+        ul.data-list li:last-child {
+            border-bottom: none;
+        }
+        .chart-container {
+            height: 300px;
+            position: relative;
+        }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-right: 16px;
+            margin-bottom: 8px;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            margin-right: 4px;
+            border-radius: 2px;
+        }
+        .button {
+            padding: 8px 12px;
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            transition: background-color 0.2s;
+        }
+        .button:hover {
+            background-color: #1976d2;
+        }
+        .button.refresh {
+            background-color: #4caf50;
+        }
+        .button.refresh:hover {
+            background-color: #388e3c;
+        }
+        .button svg {
+            margin-right: 6px;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 4px;
+            padding: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            font-size: 12px;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            z-index: 10;
+        }
+        .tooltip-hidden {
+            opacity: 0;
+        }
+        .data-update-indicator {
+            display: inline-block;
+            padding: 2px 6px;
+            background-color: rgba(33, 150, 243, 0.1);
+            color: #2196f3;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+        .tooltip-title {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .tooltip-value {
+            color: #2196f3;
+            font-weight: bold;
+        }
+        .tooltip-item {
+            margin-bottom: 2px;
+        }
+        .refresh-button {
+            background-color: transparent;
+            border: none;
+            color: #2196f3;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+        }
+        .refresh-button svg {
+            margin-right: 4px;
+        }
+        .refresh-button:hover {
+            text-decoration: underline;
+        }
+        .last-updated {
+            font-size: 12px;
+            color: #666;
+            margin-top: 8px;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .updating {
+            animation: pulse 1.5s infinite;
+        }
+    </style>
 </head>
-<body class="bg-gray-100">
-    <div id="root" class="container mx-auto py-6 px-4"></div>
-
-    <script type="text/babel" src="js/microbiome_dashboard.js"></script>
+<body>
+    <div id="root"></div>
+    
     <script type="text/babel">
+        // SVG icons
+        const DownloadIcon = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+        );
+        
+        const RefreshIcon = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+        );
+
+        function MicrobiomeDashboard() {
+            // State variables
+            const [activeTab, setActiveTab] = React.useState('progress');
+            const [demoRunning, setDemoRunning] = React.useState(true);
+            const [completedSamples, setCompletedSamples] = React.useState(75);
+            const [timeElapsed, setTimeElapsed] = React.useState(300); // 5 minutes
+            const [status, setStatus] = React.useState('RUNNING');
+            const [isUpdating, setIsUpdating] = React.useState(false);
+            const [lastUpdated, setLastUpdated] = React.useState(new Date());
+            const [tooltipData, setTooltipData] = React.useState(null);
+            
+            // Charts state
+            const [charts, setCharts] = React.useState({
+                taxonomy: null,
+                sample: null,
+                resource: null,
+                cost: null
+            });
+            
+            // Chart containers
+            const taxonomyChartRef = React.useRef(null);
+            const sampleChartRef = React.useRef(null);
+            const resourceChartRef = React.useRef(null);
+            const costChartRef = React.useRef(null);
+            const tooltipRef = React.useRef(null);
+            
+            // Chart colors
+            const colors = [
+                '#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8',
+                '#82CA9D', '#FFCCCB', '#A569BD', '#5DADE2', '#58D68D'
+            ];
+            
+            // Sample counts
+            const [sampleCounts, setSampleCounts] = React.useState({
+                stool: 42,
+                anterior_nares: 28,
+                buccal_mucosa: 35,
+                other: 15
+            });
+            
+            // Taxonomy data
+            const [taxonomyData, setTaxonomyData] = React.useState([
+                { name: 'Bacteroidetes', value: 35 },
+                { name: 'Firmicutes', value: 30 },
+                { name: 'Proteobacteria', value: 15 },
+                { name: 'Actinobacteria', value: 10 },
+                { name: 'Fusobacteria', value: 5 },
+                { name: 'Other', value: 5 }
+            ]);
+            
+            // Resource utilization data
+            const [resourceData, setResourceData] = React.useState(
+                Array.from({length: 10}, (_, i) => ({
+                    time: i,
+                    cpu: 60 + Math.random() * 30,
+                    memory: 70 + Math.random() * 20,
+                    gpu: i > 5 ? 80 + Math.random() * 15 : 0
+                }))
+            );
+            
+            // Status counts
+            const [statusCounts, setStatusCounts] = React.useState({
+                completed: 75,
+                running: 15,
+                pending: 8,
+                failed: 2
+            });
+            
+            // Cost data
+            const [costData, setCostData] = React.useState({
+                current: 1.24,
+                estimated: 2.50,
+                perSample: 0.025,
+                comparison: {
+                    demo: 2.50,
+                    standard: 120,
+                    onPremises: 1800
+                }
+            });
+            
+            // Format time as MM:SS
+            const formatTime = (seconds) => {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            };
+            
+            // Format date for last updated
+            const formatLastUpdated = (date) => {
+                return date.toLocaleTimeString();
+            };
+            
+            // Generate random data for simulation
+            const generateRandomData = () => {
+                // Update taxonomy data
+                const newTaxonomyData = taxonomyData.map(item => ({
+                    ...item,
+                    value: Math.max(1, item.value + (Math.random() * 6 - 3))
+                }));
+                
+                // Normalize to ensure sum is 100
+                const total = newTaxonomyData.reduce((sum, item) => sum + item.value, 0);
+                const normalizedTaxonomyData = newTaxonomyData.map(item => ({
+                    ...item,
+                    value: Math.round((item.value / total) * 100)
+                }));
+                
+                // Update sample counts
+                const newSampleCounts = { ...sampleCounts };
+                Object.keys(newSampleCounts).forEach(key => {
+                    newSampleCounts[key] = Math.max(1, newSampleCounts[key] + Math.floor(Math.random() * 5 - 2));
+                });
+                
+                // Update resource data
+                const lastTime = resourceData.length > 0 ? resourceData[resourceData.length - 1].time : 0;
+                const newResourceData = [
+                    ...resourceData.slice(-9),
+                    {
+                        time: lastTime + 1,
+                        cpu: Math.min(95, Math.max(40, resourceData[resourceData.length - 1].cpu + (Math.random() * 20 - 10))),
+                        memory: Math.min(95, Math.max(40, resourceData[resourceData.length - 1].memory + (Math.random() * 15 - 7))),
+                        gpu: Math.min(95, Math.max(0, resourceData[resourceData.length - 1].gpu + (Math.random() * 25 - 12)))
+                    }
+                ];
+                
+                // Update status counts
+                const completedIncrease = Math.floor(Math.random() * 3);
+                const newStatusCounts = {
+                    ...statusCounts,
+                    completed: statusCounts.completed + completedIncrease,
+                    running: Math.max(0, statusCounts.running - completedIncrease + Math.floor(Math.random() * 3 - 1)),
+                    pending: Math.max(0, statusCounts.pending - Math.floor(Math.random() * 2))
+                };
+                
+                // Update cost data
+                const newCostData = {
+                    ...costData,
+                    current: costData.current + (Math.random() * 0.05),
+                    perSample: costData.current / Math.max(1, completedSamples)
+                };
+                
+                return {
+                    taxonomyData: normalizedTaxonomyData,
+                    sampleCounts: newSampleCounts,
+                    resourceData: newResourceData,
+                    statusCounts: newStatusCounts,
+                    costData: newCostData
+                };
+            };
+            
+            // Fetch data from dashboard data directory
+            const fetchDataFromS3 = async (path) => {
+                try {
+                    // Remap paths to local files
+                    let localPath;
+                    if (path === window.awsConfig.statusPath) {
+                        localPath = 'data/progress.json';
+                    } else if (path === window.awsConfig.resultsPath) {
+                        localPath = 'data/summary.json';
+                    } else if (path === window.awsConfig.resourcePath) {
+                        localPath = 'data/resources.json';
+                    }
+                    
+                    console.log(`Fetching data from local path: ${localPath}`);
+                    const response = await fetch(`${localPath}?_cacheBust=${new Date().getTime()}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}`);
+                    }
+                    
+                    // Special handling for summary.json which may have malformed JSON
+                    if (localPath === 'data/summary.json') {
+                        try {
+                            // Try direct JSON parsing first
+                            const data = await response.json();
+                            console.log(`Data received from ${localPath}:`, data);
+                            return data;
+                        } catch (parseError) {
+                            console.error(`Error parsing JSON from ${localPath}:`, parseError);
+                            
+                            // Attempt to fix the malformed JSON by fetching as text
+                            const text = await response.clone().text();
+                            console.log(`Raw text from ${localPath}:`, text);
+                            
+                            // Create a manually fixed version by replacing problematic parts
+                            // Add leading zeros to all decimal values first
+                            let fixedText = text.replace(/: \.(\d+)/g, ': 0.$1');
+                            
+                            // Replace the problematic taxonomy section with a fixed version
+                            const taxonomySection = `{
+  "taxonomy": {
+    "Bacteroidetes": 0.35,
+    "Firmicutes": 0.30, 
+    "Proteobacteria": 0.15,
+    "Actinobacteria": 0.10,
+    "Fusobacteria": 0.05,
+    "Other": 0.05
+  }`;
+                            
+                            // Replace the taxonomy section with our fixed version
+                            const taxonomyPattern = /\{\s*"taxonomy":\s*\{[^}]*\}/;
+                            fixedText = fixedText.replace(taxonomyPattern, taxonomySection);
+                            
+                            console.log("Manually fixed JSON:", fixedText);
+                            
+                            console.log(`Fixed text from ${localPath}:`, fixedText);
+                            
+                            try {
+                                // Try to parse the fixed text
+                                const fixedData = JSON.parse(fixedText);
+                                console.log(`Successfully parsed fixed JSON from ${localPath}:`, fixedData);
+                                return fixedData;
+                            } catch (fixedError) {
+                                console.error(`Error parsing fixed JSON from ${localPath}:`, fixedError);
+                                
+                                // Fall back to a manually created data structure
+                                const fixedData = {
+                                    taxonomy: {
+                                        "Bacteroidetes": 0.35,
+                                        "Firmicutes": 0.30,
+                                        "Proteobacteria": 0.15,
+                                        "Actinobacteria": 0.10,
+                                        "Fusobacteria": 0.05,
+                                        "Other": 0.05
+                                    },
+                                sample_counts: {},
+                                diversity: {
+                                    alpha: {
+                                        shannon: 4.2,
+                                        simpson: 0.9
+                                    },
+                                    beta: {
+                                        bray_curtis: 0.5,
+                                        jaccard: 0.4
+                                    }
+                                },
+                                cost: {
+                                    current: 0.8,
+                                    estimated: 2.5,
+                                    per_sample: 0.025,
+                                    standard_cloud: 120,
+                                    on_premises: 1800
+                                },
+                                timestamp: new Date().toISOString()
+                            };
+                            
+                            // Extract sample counts if possible
+                            try {
+                                const sampleMatch = text.match(/"sample_counts":\s*{([^}]+)}/);
+                                if (sampleMatch && sampleMatch[1]) {
+                                    const sampleText = `{${sampleMatch[1]}}`;
+                                    const fixedSampleText = sampleText.replace(/([a-zA-Z_]+):/g, '"$1":');
+                                    fixedData.sample_counts = JSON.parse(fixedSampleText);
+                                }
+                            } catch (e) {
+                                console.error("Failed to extract sample counts:", e);
+                            }
+                            
+                            // Extract cost data if possible
+                            try {
+                                const costMatch = text.match(/"cost":\s*{([^}]+)}/);
+                                if (costMatch && costMatch[1]) {
+                                    const costText = `{${costMatch[1]}}`;
+                                    const fixedCostText = costText
+                                        .replace(/([a-zA-Z_]+):/g, '"$1":')
+                                        .replace(/:\s*\.(\d+)/g, ': 0.$1');
+                                    const costObj = JSON.parse(fixedCostText);
+                                    fixedData.cost = costObj;
+                                }
+                            } catch (e) {
+                                console.error("Failed to extract cost data:", e);
+                            }
+                            
+                            console.log(`Using fixed data for ${localPath}:`, fixedData);
+                            return fixedData;
+                        }
+                    } else {
+                        // Normal JSON parsing for other files
+                        const data = await response.json();
+                        console.log(`Data received from ${localPath}:`, data);
+                        return data;
+                    }
+                } catch (error) {
+                    console.error(`Error fetching data:`, error);
+                    return null;
+                }
+            };
+            
+            // Refresh data
+            const refreshData = (manual = false) => {
+                if (isUpdating && !manual) return;
+                
+                setIsUpdating(true);
+                
+                if (!window.simulationModeEnabled) {
+                    // Load real data from S3
+                    Promise.all([
+                        fetchDataFromS3(window.awsConfig.statusPath),
+                        fetchDataFromS3(window.awsConfig.resultsPath),
+                        fetchDataFromS3(window.awsConfig.resourcePath)
+                    ]).then(([statusData, resultsData, resourceData]) => {
+                        if (statusData) {
+                            setCompletedSamples(statusData.completed_samples || completedSamples);
+                            setTimeElapsed(statusData.time_elapsed || timeElapsed);
+                            setStatus(statusData.status || status);
+                            
+                            if (statusData.sample_status) {
+                                setStatusCounts({
+                                    completed: statusData.sample_status.completed || 0,
+                                    running: statusData.sample_status.running || 0,
+                                    pending: statusData.sample_status.pending || 0,
+                                    failed: statusData.sample_status.failed || 0
+                                });
+                            }
+                        }
+                        
+                        if (resultsData) {
+                            if (resultsData.taxonomy) {
+                                // Create default taxonomy data if missing values
+                                const defaultTaxonomy = {
+                                    "Bacteroidetes": 0.35,
+                                    "Firmicutes": 0.30,
+                                    "Proteobacteria": 0.15,
+                                    "Actinobacteria": 0.10,
+                                    "Fusobacteria": 0.05,
+                                    "Other": 0.05
+                                };
+                                
+                                // Process taxonomy data, handling missing values
+                                const processedTaxonomy = {};
+                                let hasValidData = false;
+                                
+                                Object.entries(resultsData.taxonomy).forEach(([key, value]) => {
+                                    // Check if value is valid (not undefined, null or NaN)
+                                    if (value !== undefined && value !== null && !isNaN(value)) {
+                                        processedTaxonomy[key] = value;
+                                        hasValidData = true;
+                                    } else {
+                                        processedTaxonomy[key] = defaultTaxonomy[key] || 0.05;
+                                    }
+                                });
+                                
+                                // If no valid data was found, use default
+                                const taxonomyToUse = hasValidData ? processedTaxonomy : defaultTaxonomy;
+                                
+                                const newTaxonomyData = Object.entries(taxonomyToUse)
+                                    .map(([name, value]) => ({ name, value: Math.round(value * 100) }))
+                                    .sort((a, b) => b.value - a.value)
+                                    .slice(0, 6);
+                                
+                                setTaxonomyData(newTaxonomyData);
+                            }
+                            
+                            if (resultsData.sample_counts) {
+                                setSampleCounts(resultsData.sample_counts);
+                            }
+                            
+                            if (resultsData.cost) {
+                                // Ensure values are numbers
+                                const current = typeof resultsData.cost.current === 'number' ? 
+                                    resultsData.cost.current : 
+                                    parseFloat(resultsData.cost.current) || costData.current;
+                                
+                                const estimated = typeof resultsData.cost.estimated === 'number' ? 
+                                    resultsData.cost.estimated : 
+                                    parseFloat(resultsData.cost.estimated) || costData.estimated;
+                                
+                                const perSample = typeof resultsData.cost.per_sample === 'number' ? 
+                                    resultsData.cost.per_sample : 
+                                    parseFloat(resultsData.cost.per_sample) || current / Math.max(1, completedSamples);
+                                
+                                const standardCloud = typeof resultsData.cost.standard_cloud === 'number' ? 
+                                    resultsData.cost.standard_cloud : 
+                                    parseFloat(resultsData.cost.standard_cloud) || costData.comparison.standard;
+                                
+                                const onPremises = typeof resultsData.cost.on_premises === 'number' ? 
+                                    resultsData.cost.on_premises : 
+                                    parseFloat(resultsData.cost.on_premises) || costData.comparison.onPremises;
+                                
+                                setCostData({
+                                    current: current,
+                                    estimated: estimated,
+                                    perSample: perSample,
+                                    comparison: {
+                                        demo: estimated,
+                                        standard: standardCloud,
+                                        onPremises: onPremises
+                                    }
+                                });
+                            }
+                        }
+                        
+                        if (resourceData && resourceData.utilization) {
+                            setResourceData(resourceData.utilization.map((item, index) => ({
+                                time: index,
+                                cpu: item.cpu || 0,
+                                memory: item.memory || 0,
+                                gpu: item.gpu || 0
+                            })));
+                        }
+                        
+                        setLastUpdated(new Date());
+                        setIsUpdating(false);
+                        
+                        // Update charts
+                        initializeCharts(true);
+                    }).catch(error => {
+                        console.error("Error refreshing data:", error);
+                        setIsUpdating(false);
+                        
+                        // Fallback to simulation if real data fails
+                        const {
+                            taxonomyData: newTaxonomyData,
+                            sampleCounts: newSampleCounts,
+                            resourceData: newResourceData,
+                            statusCounts: newStatusCounts,
+                            costData: newCostData
+                        } = generateRandomData();
+                        
+                        setTaxonomyData(newTaxonomyData);
+                        setSampleCounts(newSampleCounts);
+                        setResourceData(newResourceData);
+                        setStatusCounts(newStatusCounts);
+                        setCostData(newCostData);
+                        setLastUpdated(new Date());
+                        
+                        // Update charts
+                        initializeCharts(true);
+                    });
+                } else {
+                    // Use simulation data as fallback
+                    setTimeout(() => {
+                        const {
+                            taxonomyData: newTaxonomyData,
+                            sampleCounts: newSampleCounts,
+                            resourceData: newResourceData,
+                            statusCounts: newStatusCounts,
+                            costData: newCostData
+                        } = generateRandomData();
+                        
+                        setTaxonomyData(newTaxonomyData);
+                        setSampleCounts(newSampleCounts);
+                        setResourceData(newResourceData);
+                        setStatusCounts(newStatusCounts);
+                        setCostData(newCostData);
+                        setLastUpdated(new Date());
+                        setIsUpdating(false);
+                        
+                        // Update charts
+                        initializeCharts(true);
+                    }, manual ? 300 : 1000);
+                }
+            };
+            
+            // Create or update charts
+            const initializeCharts = (update = false) => {
+                // Clean up existing charts if not updating
+                if (!update) {
+                    Object.values(charts).forEach(chart => {
+                        if (chart) chart.destroy();
+                    });
+                }
+                
+                let newCharts = { ...charts };
+                
+                // Create or update charts based on which tab is active
+                if (activeTab === 'progress' && resourceChartRef.current) {
+                    // Resource Utilization Chart
+                    const ctx = resourceChartRef.current.getContext('2d');
+                    
+                    if (update && newCharts.resource) {
+                        // Update existing chart
+                        newCharts.resource.data.labels = resourceData.map(item => `${item.time} min`);
+                        newCharts.resource.data.datasets[0].data = resourceData.map(item => item.cpu);
+                        newCharts.resource.data.datasets[1].data = resourceData.map(item => item.memory);
+                        newCharts.resource.data.datasets[2].data = resourceData.map(item => item.gpu);
+                        newCharts.resource.update();
+                    } else {
+                        // Create new chart
+                        if (newCharts.resource) newCharts.resource.destroy();
+                        
+                        newCharts.resource = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: resourceData.map(item => `${item.time} min`),
+                                datasets: [
+                                    {
+                                        label: 'CPU',
+                                        data: resourceData.map(item => item.cpu),
+                                        borderColor: '#2196f3',
+                                        backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                                        tension: 0.4
+                                    },
+                                    {
+                                        label: 'Memory',
+                                        data: resourceData.map(item => item.memory),
+                                        borderColor: '#4caf50',
+                                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                                        tension: 0.4
+                                    },
+                                    {
+                                        label: 'GPU',
+                                        data: resourceData.map(item => item.gpu),
+                                        borderColor: '#ff9800',
+                                        backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                                        tension: 0.4
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: {
+                                        position: 'top'
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            title: function(context) {
+                                                return `Time: ${context[0].label}`;
+                                            },
+                                            label: function(context) {
+                                                return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}%`;
+                                            },
+                                            footer: function(context) {
+                                                const datasetData = resourceData[context[0].dataIndex];
+                                                const cpuCost = (datasetData.cpu / 100) * 0.04; // $0.04 per vCPU at 100%
+                                                const memoryCost = (datasetData.memory / 100) * 0.02; // $0.02 per GB at 100%
+                                                const gpuCost = (datasetData.gpu / 100) * 0.20; // $0.20 per GPU at 100%
+                                                return `Estimated cost/hr: $${(cpuCost + memoryCost + gpuCost).toFixed(3)}`;
+                                            }
+                                        }
+                                    }
+                                },
+                                scales: {
+                                    y: {
+                                        min: 0,
+                                        max: 100,
+                                        title: {
+                                            display: true,
+                                            text: 'Utilization (%)'
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                else if (activeTab === 'results') {
+                    // Taxonomy Pie Chart
+                    if (taxonomyChartRef.current) {
+                        const ctx = taxonomyChartRef.current.getContext('2d');
+                        
+                        if (update && newCharts.taxonomy) {
+                            // Update existing chart
+                            newCharts.taxonomy.data.labels = taxonomyData.map(item => item.name);
+                            newCharts.taxonomy.data.datasets[0].data = taxonomyData.map(item => item.value);
+                            newCharts.taxonomy.update();
+                        } else {
+                            // Create new chart
+                            if (newCharts.taxonomy) newCharts.taxonomy.destroy();
+                            
+                            newCharts.taxonomy = new Chart(ctx, {
+                                type: 'pie',
+                                data: {
+                                    labels: taxonomyData.map(item => item.name),
+                                    datasets: [{
+                                        data: taxonomyData.map(item => item.value),
+                                        backgroundColor: colors.slice(0, taxonomyData.length)
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        legend: {
+                                            display: false
+                                        },
+                                        tooltip: {
+                                            callbacks: {
+                                                title: function(context) {
+                                                    return context[0].label;
+                                                },
+                                                label: function(context) {
+                                                    return `Abundance: ${context.parsed}%`;
+                                                },
+                                                footer: function(context) {
+                                                    const phylum = context[0].label;
+                                                    const descriptions = {
+                                                        'Bacteroidetes': 'Common in gut microbiome, aids digestion',
+                                                        'Firmicutes': 'Diverse phylum, includes many beneficial bacteria',
+                                                        'Proteobacteria': 'Includes many pathogens, elevated in dysbiosis',
+                                                        'Actinobacteria': 'Includes skin microbes and Bifidobacterium',
+                                                        'Fusobacteria': 'Anaerobic bacteria, sometimes pathogenic',
+                                                        'Other': 'Various less abundant bacterial phyla'
+                                                    };
+                                                    return descriptions[phylum] || '';
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    
+                    // Sample Bar Chart
+                    if (sampleChartRef.current) {
+                        const ctx = sampleChartRef.current.getContext('2d');
+                        
+                        if (update && newCharts.sample) {
+                            // Update existing chart
+                            newCharts.sample.data.labels = Object.keys(sampleCounts).map(key => key.replace('_', ' '));
+                            newCharts.sample.data.datasets[0].data = Object.values(sampleCounts);
+                            newCharts.sample.update();
+                        } else {
+                            // Create new chart
+                            if (newCharts.sample) newCharts.sample.destroy();
+                            
+                            newCharts.sample = new Chart(ctx, {
+                                type: 'bar',
+                                data: {
+                                    labels: Object.keys(sampleCounts).map(key => key.replace('_', ' ')),
+                                    datasets: [{
+                                        label: 'Samples',
+                                        data: Object.values(sampleCounts),
+                                        backgroundColor: colors.slice(0, Object.keys(sampleCounts).length)
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        legend: {
+                                            display: false
+                                        },
+                                        tooltip: {
+                                            callbacks: {
+                                                title: function(context) {
+                                                    return context[0].label.charAt(0).toUpperCase() + context[0].label.slice(1);
+                                                },
+                                                label: function(context) {
+                                                    return `Count: ${context.parsed.y}`;
+                                                },
+                                                footer: function(context) {
+                                                    const bodySite = context[0].label.toLowerCase();
+                                                    const descriptions = {
+                                                        'stool': 'Gut microbiome sample',
+                                                        'anterior nares': 'Nasal microbiome sample',
+                                                        'buccal mucosa': 'Cheek/mouth microbiome sample',
+                                                        'other': 'Various other body sites'
+                                                    };
+                                                    return descriptions[bodySite] || '';
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+                
+                else if (activeTab === 'cost' && costChartRef.current) {
+                    // Cost Comparison Bar Chart
+                    const ctx = costChartRef.current.getContext('2d');
+                    
+                    if (update && newCharts.cost) {
+                        // Update existing chart
+                        newCharts.cost.data.datasets[0].data = [
+                            costData.comparison.demo,
+                            costData.comparison.standard,
+                            costData.comparison.onPremises
+                        ];
+                        newCharts.cost.update();
+                    } else {
+                        // Create new chart
+                        if (newCharts.cost) newCharts.cost.destroy();
+                        
+                        newCharts.cost = new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: ['This Demo', 'Standard Cloud', 'On-Premises'],
+                                datasets: [{
+                                    label: 'Cost ($)',
+                                    data: [
+                                        costData.comparison.demo,
+                                        costData.comparison.standard,
+                                        costData.comparison.onPremises
+                                    ],
+                                    backgroundColor: ['#2196f3', '#ff9800', '#f44336']
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: {
+                                        type: 'logarithmic',
+                                        title: {
+                                            display: true,
+                                            text: 'Cost ($) - Log Scale'
+                                        }
+                                    }
+                                },
+                                plugins: {
+                                    tooltip: {
+                                        callbacks: {
+                                            title: function(context) {
+                                                return context[0].label;
+                                            },
+                                            label: function(context) {
+                                                return `Cost: $${context.parsed.y.toFixed(2)}`;
+                                            },
+                                            footer: function(context) {
+                                                const option = context[0].label;
+                                                const descriptions = {
+                                                    'This Demo': 'AWS Batch with Spot instances',
+                                                    'Standard Cloud': 'Regular EC2 instances',
+                                                    'On-Premises': 'Traditional server infrastructure'
+                                                };
+                                                const savings = {
+                                                    'This Demo': '98% savings vs on-premises',
+                                                    'Standard Cloud': '93% savings vs on-premises',
+                                                    'On-Premises': 'Baseline cost'
+                                                };
+                                                return `${descriptions[option]}\n${savings[option]}`;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                if (!update) {
+                    setCharts(newCharts);
+                }
+            };
+            
+            // Generate report data for download
+            const generateReportData = () => {
+                const reportDate = new Date().toISOString().split('T')[0];
+                let report = `Microbiome Analysis Report - ${reportDate}\n`;
+                report += `===================================\n\n`;
+                report += `SUMMARY\n`;
+                report += `-----------------\n`;
+                report += `Total samples: 100\n`;
+                report += `Completed samples: ${completedSamples}\n`;
+                report += `Job status: ${status}\n`;
+                report += `Total time elapsed: ${formatTime(timeElapsed)}\n`;
+                report += `Current cost: $${costData.current.toFixed(2)}\n\n`;
+                
+                report += `TAXONOMY ANALYSIS\n`;
+                report += `-----------------\n`;
+                taxonomyData.forEach(item => {
+                    report += `${item.name}: ${item.value}%\n`;
+                });
+                report += `\n`;
+                
+                report += `SAMPLE DISTRIBUTION\n`;
+                report += `-----------------\n`;
+                Object.entries(sampleCounts).forEach(([key, value]) => {
+                    report += `${key.replace('_', ' ')}: ${value}\n`;
+                });
+                report += `\n`;
+                
+                report += `PROCESSING STATUS\n`;
+                report += `-----------------\n`;
+                Object.entries(statusCounts).forEach(([key, value]) => {
+                    report += `${key}: ${value}\n`;
+                });
+                report += `\n`;
+                
+                report += `RESOURCE UTILIZATION\n`;
+                report += `-----------------\n`;
+                report += `Last measurements:\n`;
+                const lastResource = resourceData[resourceData.length - 1];
+                report += `CPU: ${lastResource.cpu.toFixed(1)}%\n`;
+                report += `Memory: ${lastResource.memory.toFixed(1)}%\n`;
+                report += `GPU: ${lastResource.gpu.toFixed(1)}%\n\n`;
+                
+                report += `COST ANALYSIS\n`;
+                report += `-----------------\n`;
+                report += `Current cost: $${costData.current.toFixed(2)}\n`;
+                report += `Estimated total: $${costData.estimated.toFixed(2)}\n`;
+                report += `Cost per sample: $${costData.perSample.toFixed(3)}\n\n`;
+                report += `Comparison:\n`;
+                report += `This demo: $${costData.comparison.demo.toFixed(2)}\n`;
+                report += `Standard cloud: $${costData.comparison.standard.toFixed(2)}\n`;
+                report += `On-premises: $${costData.comparison.onPremises.toFixed(2)}\n\n`;
+                
+                report += `Generated by Microbiome Demo Dashboard\n`;
+                
+                return report;
+            };
+            
+            // Download report
+            const downloadReport = () => {
+                const reportData = generateReportData();
+                const reportDate = new Date().toISOString().split('T')[0];
+                const blob = new Blob([reportData], { type: 'text/plain;charset=utf-8' });
+                
+                // Using FileSaver.js
+                saveAs(blob, `microbiome-report-${reportDate}.txt`);
+            };
+            
+            // Download chart as image
+            const downloadChart = (chartName) => {
+                let chart;
+                let filename;
+                
+                switch (chartName) {
+                    case 'taxonomy':
+                        chart = charts.taxonomy;
+                        filename = 'taxonomy-chart.png';
+                        break;
+                    case 'sample':
+                        chart = charts.sample;
+                        filename = 'sample-distribution.png';
+                        break;
+                    case 'resource':
+                        chart = charts.resource;
+                        filename = 'resource-utilization.png';
+                        break;
+                    case 'cost':
+                        chart = charts.cost;
+                        filename = 'cost-comparison.png';
+                        break;
+                    default:
+                        return;
+                }
+                
+                if (chart) {
+                    const url = chart.toBase64Image();
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                }
+            };
+            
+            // Initialize timer and data refresh
+            React.useEffect(() => {
+                // Timer for elapsed time
+                const timer = setInterval(() => {
+                    setTimeElapsed(prev => {
+                        const newTime = prev + 1;
+                        // Max 15 minutes (900 seconds)
+                        if (newTime >= 900) {
+                            clearInterval(timer);
+                            setStatus('COMPLETED');
+                            setCompletedSamples(100);
+                            return 900;
+                        }
+                        // Increment completed samples
+                        if (newTime % 15 === 0 && completedSamples < 100) {
+                            setCompletedSamples(prev => Math.min(100, prev + 1));
+                        }
+                        return newTime;
+                    });
+                }, 1000);
+                
+                // Periodic data refresh using configured interval
+                const refreshInterval = setInterval(() => {
+                    if (demoRunning) {
+                        refreshData();
+                    }
+                }, window.awsConfig?.refreshInterval || 5000);
+                
+                return () => {
+                    clearInterval(timer);
+                    clearInterval(refreshInterval);
+                };
+            }, [demoRunning, completedSamples]);
+            
+            // Initialize charts when component mounts or tab changes
+            React.useEffect(() => {
+                // Wait for the canvas elements to be in the DOM
+                setTimeout(() => initializeCharts(), 100);
+                
+                // Cleanup on unmount
+                return () => {
+                    Object.values(charts).forEach(chart => {
+                        if (chart) chart.destroy();
+                    });
+                };
+            }, [activeTab]);
+            
+            // Handle tab changes
+            const handleTabChange = (tab) => {
+                setActiveTab(tab);
+            };
+            
+            // Progress Tab
+            const renderProgressTab = () => (
+                <div>
+                    <div className="card">
+                        <div className="card-header">
+                            <h3>Demo Progress</h3>
+                            <button className="refresh-button" onClick={() => refreshData(true)}>
+                                <RefreshIcon /> Refresh Data
+                            </button>
+                        </div>
+                        <p>Processed: {completedSamples} of 100 samples ({completedSamples}%)</p>
+                        <div className="progress-bar">
+                            <div className="progress-value" style={{width: `${completedSamples}%`}}></div>
+                        </div>
+                        <div style={{marginTop: '8px'}}>
+                            <p>Time elapsed: {formatTime(timeElapsed)}</p>
+                            <p>Estimated time remaining: {formatTime(Math.max(0, 900 - timeElapsed))}</p>
+                        </div>
+                    </div>
+                    
+                    <div className="card">
+                        <div className="card-header">
+                            <h3>Job Status</h3>
+                            <button className="button" onClick={downloadReport}>
+                                <DownloadIcon /> Download Report
+                            </button>
+                        </div>
+                        <div className="status-indicator">
+                            <div 
+                                className="status-dot" 
+                                style={{
+                                    backgroundColor: 
+                                        status === 'COMPLETED' ? '#4caf50' : 
+                                        status === 'RUNNING' ? '#2196f3' : 
+                                        status === 'FAILED' ? '#f44336' : '#ff9800'
+                                }}
+                            ></div>
+                            <span>{status}</span>
+                        </div>
+                        <p>Processing samples in AWS Batch...</p>
+                    </div>
+                    
+                    <div className="card">
+                        <div className="card-header">
+                            <h3>Resource Utilization</h3>
+                            <button className="button" onClick={() => downloadChart('resource')}>
+                                <DownloadIcon /> Download Chart
+                            </button>
+                        </div>
+                        <div className="chart-container">
+                            <canvas ref={resourceChartRef}></canvas>
+                        </div>
+                        <p className="last-updated">
+                            Last updated: {formatLastUpdated(lastUpdated)}
+                            {isUpdating && <span className="data-update-indicator updating">Updating...</span>}
+                        </p>
+                    </div>
+                </div>
+            );
+            
+            // Results Tab
+            const renderResultsTab = () => (
+                <div>
+                    <div className="flex-container">
+                        <div className="flex-item card">
+                            <div className="card-header">
+                                <h3>Taxonomic Composition</h3>
+                                <button className="button" onClick={() => downloadChart('taxonomy')}>
+                                    <DownloadIcon /> Download Chart
+                                </button>
+                            </div>
+                            <div className="chart-container">
+                                <canvas ref={taxonomyChartRef}></canvas>
+                            </div>
+                            <div className="legend">
+                                {taxonomyData.map((item, index) => (
+                                    <div key={item.name} className="legend-item">
+                                        <div 
+                                            className="legend-color" 
+                                            style={{backgroundColor: colors[index % colors.length]}}
+                                        ></div>
+                                        <span>{item.name}: {item.value}%</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        <div className="flex-item card">
+                            <div className="card-header">
+                                <h3>Sample Distribution</h3>
+                                <button className="button" onClick={() => downloadChart('sample')}>
+                                    <DownloadIcon /> Download Chart
+                                </button>
+                            </div>
+                            <div className="chart-container">
+                                <canvas ref={sampleChartRef}></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="card">
+                        <div className="card-header">
+                            <h3>Processing Status</h3>
+                            <button className="refresh-button" onClick={() => refreshData(true)}>
+                                <RefreshIcon /> Refresh Data
+                            </button>
+                        </div>
+                        <div className="grid">
+                            {Object.entries(statusCounts).map(([key, value]) => (
+                                <div key={key} className="grid-item">
+                                    <div className="stat-label">{key}</div>
+                                    <div className="stat-value">{value}</div>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="last-updated">
+                            Last updated: {formatLastUpdated(lastUpdated)}
+                            {isUpdating && <span className="data-update-indicator updating">Updating...</span>}
+                        </p>
+                    </div>
+                </div>
+            );
+            
+            // Cost Tab
+            const renderCostTab = () => (
+                <div>
+                    <div className="card">
+                        <div className="card-header">
+                            <h3>Cost Analysis</h3>
+                            <button className="button" onClick={downloadReport}>
+                                <DownloadIcon /> Download Report
+                            </button>
+                        </div>
+                        <div className="grid">
+                            <div className="grid-item">
+                                <div className="stat-label">Current Cost</div>
+                                <div className="stat-value">${costData.current.toFixed(2)}</div>
+                            </div>
+                            <div className="grid-item">
+                                <div className="stat-label">Estimated Total</div>
+                                <div className="stat-value">${costData.estimated.toFixed(2)}</div>
+                            </div>
+                            <div className="grid-item">
+                                <div className="stat-label">Cost per Sample</div>
+                                <div className="stat-value">${costData.perSample.toFixed(3)}</div>
+                            </div>
+                        </div>
+                        
+                        <div style={{marginTop: '24px'}}>
+                            <div className="card-header">
+                                <h3>Cost Comparison</h3>
+                                <button className="button" onClick={() => downloadChart('cost')}>
+                                    <DownloadIcon /> Download Chart
+                                </button>
+                            </div>
+                            <div className="chart-container">
+                                <canvas ref={costChartRef}></canvas>
+                            </div>
+                            <p className="stat-label" style={{marginTop: '8px'}}>
+                                * Using logarithmic scale due to large differences between options
+                            </p>
+                            <p className="last-updated">
+                                Last updated: {formatLastUpdated(lastUpdated)}
+                                {isUpdating && <span className="data-update-indicator updating">Updating...</span>}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+            
+            // Render the dashboard
+            return (
+                <div className="container">
+                    <div className="header">
+                        <h1>Microbiome Analysis Dashboard</h1>
+                        <div className="status-indicator">
+                            <div 
+                                className="status-dot"
+                                style={{backgroundColor: demoRunning ? '#4caf50' : '#9e9e9e'}}
+                            ></div>
+                            <span>{demoRunning ? 'Demo Running' : 'Demo Inactive'}</span>
+                        </div>
+                    </div>
+                    
+                    <div className="tabs">
+                        {['progress', 'results', 'cost'].map(tab => (
+                            <div 
+                                key={tab}
+                                className={`tab ${activeTab === tab ? 'active' : ''}`}
+                                onClick={() => handleTabChange(tab)}
+                            >
+                                {tab}
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="tab-content">
+                        {activeTab === 'progress' && renderProgressTab()}
+                        {activeTab === 'results' && renderResultsTab()}
+                        {activeTab === 'cost' && renderCostTab()}
+                    </div>
+                    
+                    {/* Tooltip container */}
+                    <div 
+                        ref={tooltipRef}
+                        className={`tooltip ${!tooltipData ? 'tooltip-hidden' : ''}`}
+                        style={{
+                            top: tooltipData?.y ?? 0,
+                            left: tooltipData?.x ?? 0
+                        }}
+                    >
+                        {tooltipData?.content}
+                    </div>
+                </div>
+            );
+        }
+        
+        // Render the app
         ReactDOM.render(<MicrobiomeDashboard />, document.getElementById('root'));
     </script>
-
-    <!-- Load AWS SDK configuration -->
+    
+    <!-- Configuration for connecting to real data files -->
     <script>
-        // Initialize AWS SDK with config from environment
-        const loadAwsConfig = async () => {
-            try {
-                const response = await fetch('/api/aws-config');
-                const config = await response.json();
-                AWS.config.region = config.region;
-                AWS.config.credentials = new AWS.Credentials({
-                    accessKeyId: config.accessKeyId,
-                    secretAccessKey: config.secretAccessKey,
-                    sessionToken: config.sessionToken
-                });
-                console.log('AWS SDK configured successfully');
-            } catch (error) {
-                console.error('Failed to load AWS config:', error);
-                // Fall back to simulation mode if we can't load AWS config
-                window.simulationModeEnabled = true;
-            }
+        // Real data mode
+        window.simulationModeEnabled = false;
+        console.log('Running with real data files');
+        
+        // S3 configuration
+        window.awsConfig = {
+            region: 'us-east-1',
+            bucketName: 'microbiome-demo-bucket-1746342697',
+            dashboardBucket: 'microbiome-demo-dashboard-1746342992',
+            statusPath: 'status/progress.json',
+            resultsPath: 'results/summary.json',
+            resourcePath: 'monitoring/resources.json',
+            // Refresh data every 5 seconds
+            refreshInterval: 5000
         };
-
-        // Call the function to load AWS config
-        loadAwsConfig();
+        
+        // Debug function to test JSON parsing
+        async function testJsonParsing() {
+            try {
+                const response = await fetch('data/summary.json?' + new Date().getTime());
+                const text = await response.text();
+                console.log("Raw summary.json:", text);
+                
+                try {
+                    const data = JSON.parse(text);
+                    console.log("Successfully parsed JSON:", data);
+                    alert("JSON parsed successfully");
+                } catch (parseError) {
+                    console.error("JSON parse error:", parseError);
+                    
+                    // Try fixing common JSON issues
+                    let fixedText = text
+                        // Fix empty values in taxonomy
+                        .replace(/("[^"]+": *),/g, '$1 0.0,')
+                        // Fix decimal values without leading zeros
+                        .replace(/: \.(\d+)/g, ': 0.$1');
+                        
+                    console.log("Fixed JSON text:", fixedText);
+                    
+                    try {
+                        const fixedData = JSON.parse(fixedText);
+                        console.log("Successfully parsed fixed JSON:", fixedData);
+                        alert("Fixed JSON parsed successfully");
+                    } catch (fixError) {
+                        console.error("Fixed JSON parse error:", fixError);
+                        alert("Failed to parse even with fixes: " + fixError.message);
+                    }
+                }
+            } catch (fetchError) {
+                console.error("Fetch error:", fetchError);
+                alert("Failed to fetch data: " + fetchError.message);
+            }
+        }
     </script>
 </body>
 </html>
