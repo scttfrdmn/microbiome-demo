@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman, All Rights Reserved.
 #
 # aws_helper.sh - AWS CLI helper functions with profile support
 
@@ -21,9 +21,9 @@ run_aws() {
   shift
   
   if [ -n "$AWS_PROFILE" ]; then
-    aws --profile "$AWS_PROFILE" $cmd "$@"
+    aws --profile "$AWS_PROFILE" --region "${REGION:-us-east-1}" $cmd "$@"
   else
-    aws $cmd "$@"
+    aws --region "${REGION:-us-east-1}" $cmd "$@"
   fi
 }
 

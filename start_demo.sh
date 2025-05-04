@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman, All Rights Reserved.
 #
 # start_demo.sh - Launch the microbiome demo workflow
 
@@ -47,6 +47,7 @@ echo "Invoking orchestrator function: $LAMBDA_FUNCTION"
 run_aws lambda invoke \
   --function-name $LAMBDA_FUNCTION \
   --invocation-type Event \
+  --cli-binary-format raw-in-base64-out \
   --payload '{"action": "start_demo"}' \
   response.json
 

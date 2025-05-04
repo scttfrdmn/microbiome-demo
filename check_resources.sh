@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman, All Rights Reserved.
 #
 # check_resources.sh
 # Script to verify AWS resources and quotas before running the demo

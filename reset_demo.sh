@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman, All Rights Reserved.
 #
 # reset_demo.sh
 # Quick recovery script for the demo in case of issues
@@ -69,12 +69,26 @@ GPU_JOB_QUEUE=$(run_aws cloudformation describe-stack-resources \
 # Cancel all running jobs
 echo "Cancelling all running jobs..."
 if [ "$CPU_JOB_QUEUE" != "NOT_FOUND" ]; then
-  # Get all RUNNABLE and STARTING jobs
+  # Get all RUNNABLE, STARTING, and RUNNING jobs
   CPU_JOBS=$(run_aws batch list-jobs \
     --job-queue "$CPU_JOB_QUEUE" \
-    --job-status RUNNABLE STARTING RUNNING \
+    --job-status RUNNABLE \
     --query "jobSummaryList[*].jobId" \
     --output text)
+  
+  # Add STARTING jobs
+  CPU_JOBS="$CPU_JOBS $(run_aws batch list-jobs \
+    --job-queue "$CPU_JOB_QUEUE" \
+    --job-status STARTING \
+    --query "jobSummaryList[*].jobId" \
+    --output text)"
+    
+  # Add RUNNING jobs
+  CPU_JOBS="$CPU_JOBS $(run_aws batch list-jobs \
+    --job-queue "$CPU_JOB_QUEUE" \
+    --job-status RUNNING \
+    --query "jobSummaryList[*].jobId" \
+    --output text)"
   
   # Cancel each job
   for JOB_ID in $CPU_JOBS; do
@@ -87,12 +101,26 @@ if [ "$CPU_JOB_QUEUE" != "NOT_FOUND" ]; then
 fi
 
 if [ "$GPU_JOB_QUEUE" != "NOT_FOUND" ]; then
-  # Get all RUNNABLE and STARTING jobs
+  # Get all RUNNABLE, STARTING, and RUNNING jobs
   GPU_JOBS=$(run_aws batch list-jobs \
     --job-queue "$GPU_JOB_QUEUE" \
-    --job-status RUNNABLE STARTING RUNNING \
+    --job-status RUNNABLE \
     --query "jobSummaryList[*].jobId" \
     --output text)
+    
+  # Add STARTING jobs
+  GPU_JOBS="$GPU_JOBS $(run_aws batch list-jobs \
+    --job-queue "$GPU_JOB_QUEUE" \
+    --job-status STARTING \
+    --query "jobSummaryList[*].jobId" \
+    --output text)"
+    
+  # Add RUNNING jobs
+  GPU_JOBS="$GPU_JOBS $(run_aws batch list-jobs \
+    --job-queue "$GPU_JOB_QUEUE" \
+    --job-status RUNNING \
+    --query "jobSummaryList[*].jobId" \
+    --output text)"
   
   # Cancel each job
   for JOB_ID in $GPU_JOBS; do

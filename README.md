@@ -3,7 +3,7 @@
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
 
 > SPDX-License-Identifier: Apache-2.0  
-> SPDX-FileCopyrightText: Copyright 2025 Scott Friedman. All Rights Reserved.
+> SPDX-FileCopyrightText: Copyright 2025 Scott Friedman, All Rights Reserved.
 
 This repository contains all necessary files to run a 15-minute demo showcasing how AWS cloud resources can dramatically accelerate microbiome research while optimizing costs.
 

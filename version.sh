@@ -38,7 +38,7 @@ update_version() {
       ;;
     *)
       echo "Error: Invalid version type. Use 'major', 'minor', or 'patch'"
-      exit 1
+      return 1
       ;;
   esac
   
@@ -53,30 +53,33 @@ display_version() {
   echo "Microbiome Demo version: $version"
 }
 
-# Main script execution
-if [ $# -eq 0 ]; then
-  display_version
+# Only execute the script if it's not being sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  # Main script execution
+  if [ $# -eq 0 ]; then
+    display_version
+    exit 0
+  fi
+
+  case "$1" in
+    get)
+      get_version
+      ;;
+    update)
+      if [ $# -lt 2 ]; then
+        echo "Error: Missing version type. Use 'major', 'minor', or 'patch'"
+        exit 1
+      fi
+      update_version "$2"
+      ;;
+    display)
+      display_version
+      ;;
+    *)
+      echo "Usage: $0 [get|update <major|minor|patch>|display]"
+      exit 1
+      ;;
+  esac
+
   exit 0
 fi
-
-case "$1" in
-  get)
-    get_version
-    ;;
-  update)
-    if [ $# -lt 2 ]; then
-      echo "Error: Missing version type. Use 'major', 'minor', or 'patch'"
-      exit 1
-    fi
-    update_version "$2"
-    ;;
-  display)
-    display_version
-    ;;
-  *)
-    echo "Usage: $0 [get|update <major|minor|patch>|display]"
-    exit 1
-    ;;
-esac
-
-exit 0

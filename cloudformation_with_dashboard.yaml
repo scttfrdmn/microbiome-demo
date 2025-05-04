@@ -1,0 +1,500 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman, All Rights Reserved.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for 15-minute Microbiome Demo with VPC options and Dashboard'
+
+Parameters:
+  DataBucketName:
+    Type: String
+    Description: Name of the S3 bucket to store input and output data
+    Default: microbiome-demo-bucket
+
+  KeyPairName:
+    Type: String
+    Description: EC2 Key Pair for SSH access
+    Default: microbiome-demo-key
+    
+  UseDefaultVPC:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Whether to use the default VPC or create a new one
+
+  # For default VPC option
+  DefaultVPC:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: Default VPC ID (required if UseDefaultVPC is true)
+    Default: vpc-cd49bfb0
+    
+  DefaultSubnet1:
+    Type: 'AWS::EC2::Subnet::Id'
+    Description: First subnet in default VPC (required if UseDefaultVPC is true)
+    Default: subnet-2eec4a71
+    
+  DefaultSubnet2:
+    Type: 'AWS::EC2::Subnet::Id'
+    Description: Second subnet in default VPC (required if UseDefaultVPC is true)
+    Default: subnet-f59636d4
+
+Conditions:
+  CreateNewVPC: !Equals [!Ref UseDefaultVPC, 'false']
+  UseExistingVPC: !Equals [!Ref UseDefaultVPC, 'true']
+
+Resources:
+  # VPC and Networking resources - only created if UseDefaultVPC is false
+  MicrobiomeVPC:
+    Type: AWS::EC2::VPC
+    Condition: CreateNewVPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: MicrobiomeVPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: CreateNewVPC
+    Properties:
+      VpcId: !Ref MicrobiomeVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: MicrobiomePublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: CreateNewVPC
+    Properties:
+      VpcId: !Ref MicrobiomeVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: MicrobiomePublicSubnet2
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateNewVPC
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MicrobiomeInternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateNewVPC
+    Properties:
+      VpcId: !Ref MicrobiomeVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateNewVPC
+    Properties:
+      VpcId: !Ref MicrobiomeVPC
+      Tags:
+        - Key: Name
+          Value: MicrobiomePublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Condition: CreateNewVPC
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateNewVPC
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateNewVPC
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Security Groups
+  BatchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for AWS Batch compute resources
+      VpcId: !If [CreateNewVPC, !Ref MicrobiomeVPC, !Ref DefaultVPC]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: BatchSecurityGroup
+
+  # IAM Roles
+  BatchServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: batch.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+
+  BatchInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  BatchInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref BatchInstanceRole
+
+  BatchJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AWSBatchFullAccess
+
+  # AWS Batch Resources - Graviton CPU Environment
+  GravitonComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      ServiceRole: !GetAtt BatchServiceRole.Arn
+      ComputeResources:
+        Type: SPOT
+        MinvCpus: 0
+        MaxvCpus: 256
+        DesiredvCpus: 0
+        InstanceTypes:
+          - c6g.4xlarge
+          - c6g.8xlarge
+          - c6g.12xlarge
+        Subnets: !If 
+          - CreateNewVPC
+          - [!Ref PublicSubnet1, !Ref PublicSubnet2]
+          - [!Ref DefaultSubnet1, !Ref DefaultSubnet2]
+        SecurityGroupIds:
+          - !Ref BatchSecurityGroup
+        InstanceRole: !Ref BatchInstanceProfile
+        SpotIamFleetRole: !GetAtt SpotFleetRole.Arn
+        BidPercentage: 60
+        AllocationStrategy: SPOT_CAPACITY_OPTIMIZED
+      State: ENABLED
+
+  # GPU Compute Environment
+  GpuComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      ServiceRole: !GetAtt BatchServiceRole.Arn
+      ComputeResources:
+        Type: SPOT
+        MinvCpus: 0
+        MaxvCpus: 256
+        DesiredvCpus: 0
+        InstanceTypes:
+          - g4dn.xlarge
+          - g4dn.2xlarge
+          - g4dn.4xlarge
+        Subnets: !If 
+          - CreateNewVPC
+          - [!Ref PublicSubnet1, !Ref PublicSubnet2]
+          - [!Ref DefaultSubnet1, !Ref DefaultSubnet2]
+        SecurityGroupIds:
+          - !Ref BatchSecurityGroup
+        InstanceRole: !Ref BatchInstanceProfile
+        SpotIamFleetRole: !GetAtt SpotFleetRole.Arn
+        BidPercentage: 60
+        AllocationStrategy: SPOT_CAPACITY_OPTIMIZED
+      State: ENABLED
+
+  # Spot Fleet IAM Role
+  SpotFleetRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: spotfleet.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole
+
+  # AWS Batch Job Queues
+  CPUJobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref GravitonComputeEnvironment
+
+  GPUJobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref GpuComputeEnvironment
+
+  # AWS Batch Job Definitions
+  NextflowJobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      ContainerProperties:
+        Image: public.ecr.aws/nextflow/nextflow:latest
+        ResourceRequirements:
+          - Type: VCPU
+            Value: "8"
+          - Type: MEMORY
+            Value: "16384"
+        JobRoleArn: !GetAtt BatchJobRole.Arn
+        Command:
+          - nextflow
+          - run
+          - workflow/microbiome_main.nf
+          - -profile
+          - aws
+      RetryStrategy:
+        Attempts: 3
+
+  AdmixtureGpuJobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      ContainerProperties:
+        Image: public.ecr.aws/lts/kraken2-gpu:latest
+        ResourceRequirements:
+          - Type: VCPU
+            Value: "4"
+          - Type: MEMORY
+            Value: "16384"
+          - Type: GPU
+            Value: "1"
+        JobRoleArn: !GetAtt BatchJobRole.Arn
+        Command:
+          - kraken2
+          - --db
+          - /kraken2-db
+          - --output
+          - kraken_output.txt
+          - --report
+          - kraken_report.txt
+          - input.fastq
+      RetryStrategy:
+        Attempts: 3
+
+  # Lambda Function for Orchestration
+  SimpleLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          import time
+          
+          s3 = boto3.client('s3')
+          batch = boto3.client('batch')
+          
+          def lambda_handler(event, context):
+              print("Received event: {}".format(json.dumps(event)))
+              
+              # Get environment variables
+              data_bucket = os.environ['DATA_BUCKET']
+              job_queue = os.environ['JOB_QUEUE']
+              job_definition = os.environ['JOB_DEFINITION']
+              
+              # For testing, create a simple file in S3
+              action = event.get('action', 'test')
+              
+              if action == 'test':
+                  # Just create a test file
+                  response = s3.put_object(
+                      Bucket=data_bucket,
+                      Key='results/test_result.txt',
+                      Body='This is a test result file created by Lambda: {}'.format(time.time())
+                  )
+                  
+                  print(f"Created test file in S3")
+                  
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps({
+                          'message': 'Test file created in S3',
+                          'timestamp': time.time()
+                      })
+                  }
+              else:
+                  # Submit a batch job
+                  print(f"Submitting job to queue: {job_queue}")
+                  response = batch.submit_job(
+                      jobName='microbiome-demo-{}'.format(int(time.time())),
+                      jobQueue=job_queue,
+                      jobDefinition=job_definition,
+                      containerOverrides={
+                          'command': [
+                              'nextflow',
+                              'run',
+                              'workflow/microbiome_main.nf',
+                              '-profile',
+                              'aws',
+                              '--samples',
+                              's3://{}/input/sample_list.csv'.format(data_bucket),
+                              '--output',
+                              's3://{}/results'.format(data_bucket),
+                              '--bucket_name',
+                              '{}'.format(data_bucket)
+                          ]
+                      }
+                  )
+                  
+                  job_id = response['jobId']
+                  print(f"Submitted job with ID: {job_id}")
+                  
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps({
+                          'message': 'Successfully submitted job',
+                          'jobId': job_id
+                      })
+                  }
+
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucketName
+          JOB_QUEUE: !Ref CPUJobQueue
+          JOB_DEFINITION: !Ref NextflowJobDefinition
+
+  # CloudFront Origin Access Identity for Dashboard
+  DashboardOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub "OAI for ${AWS::StackName} dashboard"
+
+  # CloudFront Distribution for Dashboard
+  DashboardDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !Sub "${DataBucketName}.s3.amazonaws.com"
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${DashboardOriginAccessIdentity}"
+        Enabled: true
+        DefaultRootObject: dashboard/index.html
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        Comment: !Sub "Dashboard for ${AWS::StackName}"
+
+  # S3 Bucket Policy for CloudFront
+  DashboardBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataBucketName
+      PolicyDocument:
+        Statement:
+          - Action: s3:GetObject
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::${DataBucketName}/dashboard/*"
+            Principal:
+              CanonicalUser: !GetAtt DashboardOriginAccessIdentity.S3CanonicalUserId
+
+Outputs:
+  OrchestratorLambdaArn:
+    Description: ARN of the orchestrator Lambda function
+    Value: !GetAtt SimpleLambda.Arn
+
+  CPUJobQueueArn:
+    Description: ARN of the CPU job queue
+    Value: !GetAtt CPUJobQueue.JobQueueArn
+
+  GPUJobQueueArn:
+    Description: ARN of the GPU job queue
+    Value: !GetAtt GPUJobQueue.JobQueueArn
+
+  DashboardURL:
+    Description: URL for the Microbiome Demo Dashboard
+    Value: !Sub "https://${DashboardDistribution.DomainName}/dashboard/index.html"
+  
+  VPCUsed:
+    Description: VPC being used for compute environments
+    Value: !If [CreateNewVPC, !Ref MicrobiomeVPC, !Ref DefaultVPC]
+  
+  SubnetsUsed:
+    Description: Subnets being used for compute environments
+    Value: !If [CreateNewVPC, !Join [', ', [!Ref PublicSubnet1, !Ref PublicSubnet2]], !Join [', ', [!Ref DefaultSubnet1, !Ref DefaultSubnet2]]]
