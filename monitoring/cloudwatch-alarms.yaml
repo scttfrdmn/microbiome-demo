@@ -1,0 +1,305 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudWatch Alarms for Microbiome Demo'
+
+Parameters:
+  StackName:
+    Type: String
+    Description: Name of the main CloudFormation stack
+    Default: microbiome-demo
+
+  BucketName:
+    Type: String
+    Description: Name of the S3 bucket
+    Default: microbiome-demo-bucket
+
+  AlertEmail:
+    Type: String
+    Description: Email address to send alerts to
+    Default: admin@example.com
+
+  MaxSpendLimit:
+    Type: Number
+    Description: Maximum spend limit in USD before alerting
+    Default: 50.00
+
+  CPUAlarmThreshold:
+    Type: Number
+    Description: CPU utilization percentage to trigger alarm
+    Default: 80
+
+  MemoryAlarmThreshold:
+    Type: Number
+    Description: Memory utilization percentage to trigger alarm
+    Default: 80
+
+Resources:
+  # SNS Topic for alerts
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: MicrobiomeDemoAlerts
+      TopicName: MicrobiomeDemoAlerts
+
+  # Email subscription
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+      TopicArn: !Ref AlertTopic
+
+  # Budget alert for cost
+  BudgetAlarm:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${StackName}-budget'
+        BudgetLimit:
+          Amount: !Ref MaxSpendLimit
+          Unit: USD
+        TimeUnit: MONTHLY
+        BudgetType: COST
+        CostTypes:
+          IncludeCredit: true
+          IncludeDiscount: true
+          IncludeOtherSubscription: true
+          IncludeRecurring: true
+          IncludeRefund: true
+          IncludeSubscription: true
+          IncludeSupport: true
+          IncludeTax: true
+          IncludeUpfront: true
+          UseAmortized: false
+          UseBlended: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+            NotificationState: ALARM
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+            NotificationState: ALARM
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+  # CPU utilization alarm for Batch
+  CPUUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StackName}-high-cpu'
+      AlarmDescription: 'Alarm if CPU exceeds threshold'
+      MetricName: CPUUtilization
+      Namespace: AWS/Batch
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref CPUAlarmThreshold
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: JobQueue
+          Value: !Sub '${StackName}-queue'
+
+  # Memory utilization alarm for Batch
+  MemoryUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StackName}-high-memory'
+      AlarmDescription: 'Alarm if memory exceeds threshold'
+      MetricName: MemoryUtilization
+      Namespace: AWS/Batch
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref MemoryAlarmThreshold
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: JobQueue
+          Value: !Sub '${StackName}-queue'
+
+  # S3 bucket size alarm
+  BucketSizeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StackName}-bucket-size'
+      AlarmDescription: 'Alarm if bucket size exceeds 50 GB'
+      MetricName: BucketSizeBytes
+      Namespace: AWS/S3
+      Statistic: Maximum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 53687091200  # 50 GB in bytes
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: BucketName
+          Value: !Ref BucketName
+        - Name: StorageType
+          Value: StandardStorage
+
+  # Lambda error alarm
+  LambdaErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StackName}-lambda-errors'
+      AlarmDescription: 'Alarm if Lambda function has errors'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub '${StackName}-orchestrator'
+
+  # Batch job failures alarm
+  BatchJobFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StackName}-batch-failures'
+      AlarmDescription: 'Alarm if Batch jobs fail'
+      MetricName: FailedJobs
+      Namespace: AWS/Batch
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: JobQueue
+          Value: !Sub '${StackName}-queue'
+
+  # Dashboard for monitoring
+  MonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${StackName}-monitoring'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Batch", "CPUUtilization", "JobQueue", "${StackName}-queue" ],
+                  [ ".", "MemoryUtilization", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Batch Resource Utilization",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Batch", "RunningJobs", "JobQueue", "${StackName}-queue" ],
+                  [ ".", "SubmittedJobs", ".", "." ],
+                  [ ".", "PendingJobs", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "${AWS::Region}",
+                "title": "Batch Job Status",
+                "period": 300,
+                "stat": "Maximum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${StackName}-orchestrator" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Duration", ".", ".", { "yAxis": "right" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Function Performance",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/S3", "BucketSizeBytes", "BucketName", "${BucketName}", "StorageType", "StandardStorage" ],
+                  [ ".", "NumberOfObjects", ".", ".", ".", "AllStorageTypes", { "yAxis": "right" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "S3 Bucket Usage",
+                "period": 86400,
+                "stat": "Maximum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Billing", "EstimatedCharges", "Currency", "USD" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "Estimated AWS Charges",
+                "period": 86400,
+                "stat": "Maximum"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  AlertTopicARN:
+    Description: ARN of the SNS topic for alerts
+    Value: !Ref AlertTopic
+    
+  DashboardURL:
+    Description: URL of the CloudWatch dashboard
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${StackName}-monitoring'

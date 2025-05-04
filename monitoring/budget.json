@@ -1,0 +1,23 @@
+{
+  "BudgetName": "microbiome-demo-budget",
+  "BudgetLimit": {
+    "Amount": "50",
+    "Unit": "USD"
+  },
+  "CostFilters": {},
+  "CostTypes": {
+    "IncludeTax": true,
+    "IncludeSubscription": true,
+    "UseBlended": false,
+    "IncludeRefund": true,
+    "IncludeCredit": true,
+    "IncludeUpfront": true,
+    "IncludeRecurring": true,
+    "IncludeOtherSubscription": true,
+    "IncludeSupport": true,
+    "UseAmortized": false
+  },
+  "TimeUnit": "MONTHLY",
+  "BudgetType": "COST",
+  "PlannedBudgetLimits": {}
+}
