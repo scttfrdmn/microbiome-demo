@@ -51,11 +51,15 @@ run_aws lambda invoke \
   --payload '{"action": "start_demo"}' \
   response.json
 
-# Get dashboard URL
-DASHBOARD_URL=$(get_stack_output "$STACK_NAME" "DashboardURL")
+# Get dashboard URL from CloudFormation stack
+STACK_DASHBOARD_URL=$(get_stack_output "$STACK_NAME" "DashboardURL")
+
+# CloudFront dashboard URL
+CLOUDFRONT_DASHBOARD_URL="https://d3o4i1szzgcw75.cloudfront.net/"
 
 echo ""
 echo "Demo started successfully!"
-echo "Dashboard URL: $DASHBOARD_URL"
+echo "S3 Console URL: $STACK_DASHBOARD_URL"
+echo "Dashboard URL: $CLOUDFRONT_DASHBOARD_URL"
 echo ""
 echo "Please open the dashboard URL in your browser to monitor progress"
