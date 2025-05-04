@@ -67,8 +67,10 @@ if run_aws s3 ls "s3://${BUCKET_NAME}/status/progress.json" 2>/dev/null; then
     fi
   fi
   
-  # Check if status is INITIALIZING and provide empty resources and taxonomy
-  STATUS=$(grep -o '"status":"[^"]*"' /tmp/progress.json | cut -d':' -f2 | tr -d '"')
+  # Always check if status is INITIALIZING and provide empty resources and taxonomy
+  STATUS=$(grep -o '"status":[^,}]*' /tmp/progress.json | cut -d':' -f2 | tr -d '"}')
+  echo "Detected pipeline status: $STATUS"
+  
   if [ "$STATUS" = "INITIALIZING" ]; then
     echo "Status is INITIALIZING - uploading empty resource and summary files for clean state..."
     # Create empty resource file
@@ -105,11 +107,18 @@ EOF
 }
 EOF
     
-    # Upload empty resources and summary
+    # Upload empty resources and summary - ALWAYS force these for INITIALIZING state
+    echo "Uploading clean initial state files..."
     run_aws s3 cp /tmp/empty_resources.json "s3://${DASHBOARD_BUCKET}/data/resources.json" --content-type "application/json"
     run_aws s3 cp /tmp/empty_resources.json "s3://${DASHBOARD_BUCKET}/monitoring/resources.json" --content-type "application/json"
     run_aws s3 cp /tmp/empty_summary.json "s3://${DASHBOARD_BUCKET}/data/summary.json" --content-type "application/json"
     run_aws s3 cp /tmp/empty_summary.json "s3://${DASHBOARD_BUCKET}/results/summary/microbiome_summary.json" --content-type "application/json"
+    
+    # Ensure we clear the path in the dashboard data directory too
+    run_aws s3 rm "s3://${DASHBOARD_BUCKET}/data/backup_summary.json" 2>/dev/null || true
+    run_aws s3 rm "s3://${DASHBOARD_BUCKET}/data/backup_resources.json" 2>/dev/null || true
+    
+    echo "Clean initial state uploaded successfully"
   fi
   
   run_aws s3 cp /tmp/progress.json "s3://${DASHBOARD_BUCKET}/data/progress.json" --content-type "application/json"
