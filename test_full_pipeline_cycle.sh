@@ -44,7 +44,7 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 echo "Step 1: Creating INITIALIZING state..."
 INITIALIZING_JSON='{
   "status": "INITIALIZING",
-  "time_elapsed": 5,
+  "time_elapsed": 0,
   "completed_samples": 0,
   "total_samples": 100,
   "sample_status": {

@@ -43,7 +43,7 @@ CURRENT_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # Create a new progress.json showing the pipeline as initializing
 PROGRESS_JSON='{
   "status": "INITIALIZING",
-  "time_elapsed": 5,
+  "time_elapsed": 0,
   "completed_samples": 0,
   "total_samples": 100,
   "sample_status": {
