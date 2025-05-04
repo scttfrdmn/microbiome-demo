@@ -49,8 +49,8 @@ INITIALIZING_JSON='{
   "total_samples": 100,
   "sample_status": {
     "completed": 0,
-    "running": 1,
-    "pending": 99,
+    "running": 0,
+    "pending": 100,
     "failed": 0
   },
   "timestamp": "'$TIMESTAMP'",
