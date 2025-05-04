@@ -235,7 +235,8 @@
         async function fetchData(fileType) {
             try {
                 // Get the appropriate URL from our configuration
-                const url = DASHBOARD_CONFIG.getDataUrl(fileType);
+                const baseUrl = DASHBOARD_CONFIG.environment === 'production' ? DASHBOARD_CONFIG.dataPaths.production.baseUrl : '';
+                const url = baseUrl + '/' + DASHBOARD_CONFIG.getDataUrl(fileType);
                 
                 // Add timestamp to prevent caching
                 const nocacheUrl = url + '?nocache=' + new Date().getTime();
@@ -311,7 +312,12 @@
             try {
                 // Fetch each file in sequence to avoid potential issues
                 log("Starting data fetch");
-                const progress = await fetchData('progress');
+                let attempts = 0;
+                let progress = null;
+                while (!progress && attempts < 3) {
+                    progress = await fetchData('progress');
+                    attempts++;
+                }
                 const summary = await fetchData('summary');
                 const resources = await fetchData('resources');
                 
@@ -319,6 +325,7 @@
                 if (progress) {
                     log(`Progress data: completed=${progress.completed_samples}, total=${progress.total_samples}`);
                     
+                    log(`Progress status=${progress.status}, job_id=${progress.job_id}, currentJobId=${currentJobId}`);
                     // Check if this is a new job or if we're transitioning from COMPLETED to another state
                     if (progress.job_id && progress.job_id !== currentJobId) {
                         log(`Job ID changed from ${currentJobId} to ${progress.job_id}`);
@@ -384,6 +391,11 @@
                             updateSampleUI(sampleCounts);
                         }
                     }
+                    
+                    progressData = progress;
+                    updateProgressUI(progress);
+                } else {
+                    log("WARNING: No progress data returned after 3 attempts");
                 }
                 
                 // Process resource data
