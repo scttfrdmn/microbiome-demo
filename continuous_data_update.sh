@@ -49,5 +49,5 @@ while true; do
   fi
   
   count=$((count + 1))
-  sleep 10
+  sleep 2
 done

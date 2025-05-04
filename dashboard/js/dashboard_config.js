@@ -6,7 +6,7 @@
 // Dashboard configuration
 const DASHBOARD_CONFIG = {
   // Refresh interval in milliseconds
-  refreshInterval: 5000,
+  refreshInterval: 1000,
   
   // Data paths - these will be dynamically replaced during deployment
   dataPaths: {
@@ -39,9 +39,10 @@ const DASHBOARD_CONFIG = {
   
   // Get the appropriate data URL based on environment
   getDataUrl: function(fileType) {
-    // IMPORTANT: For both production and development
-    // use the local paths - the data will be copied from
-    // the real pipeline output to the dashboard bucket
+    // Use production paths to access real data from the Nextflow pipeline
+    if (this.environment === 'production') {
+      return this.dataPaths.production[fileType];
+    }
     return this.dataPaths.localDevelopment[fileType];
   }
 };
