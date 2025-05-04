@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman, All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright 2025 Scott Friedman. All Rights Reserved.
 
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation template for 15-minute Microbiome Demo with VPC options and Dashboard'
+Description: 'CloudFormation template for 15-minute Microbiome Demo with VPC options'
 
 Parameters:
   DataBucketName:
@@ -22,21 +22,6 @@ Parameters:
       - 'true'
       - 'false'
     Description: Whether to use the default VPC or create a new one
-    
-  ProjectTag:
-    Type: String
-    Description: Project tag for all resources
-    Default: microbiome-demo
-    
-  EnvironmentTag:
-    Type: String
-    Description: Environment tag for all resources
-    Default: demo
-    
-  OwnerTag:
-    Type: String
-    Description: Owner tag for all resources
-    Default: microbiome-team
 
   # For default VPC option
   DefaultVPC:
@@ -70,12 +55,6 @@ Resources:
       Tags:
         - Key: Name
           Value: MicrobiomeVPC
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   PublicSubnet1:
     Type: AWS::EC2::Subnet
@@ -88,12 +67,6 @@ Resources:
       Tags:
         - Key: Name
           Value: MicrobiomePublicSubnet1
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   PublicSubnet2:
     Type: AWS::EC2::Subnet
@@ -106,12 +79,6 @@ Resources:
       Tags:
         - Key: Name
           Value: MicrobiomePublicSubnet2
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -120,12 +87,6 @@ Resources:
       Tags:
         - Key: Name
           Value: MicrobiomeInternetGateway
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -142,12 +103,6 @@ Resources:
       Tags:
         - Key: Name
           Value: MicrobiomePublicRouteTable
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   PublicRoute:
     Type: AWS::EC2::Route
@@ -186,12 +141,6 @@ Resources:
       Tags:
         - Key: Name
           Value: BatchSecurityGroup
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   # IAM Roles
   BatchServiceRole:
@@ -206,13 +155,6 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
-      Tags:
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   BatchInstanceRole:
     Type: AWS::IAM::Role
@@ -227,13 +169,6 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
-      Tags:
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   BatchInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -253,13 +188,6 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
-      Tags:
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
@@ -275,13 +203,6 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
         - arn:aws:iam::aws:policy/AWSBatchFullAccess
-      Tags:
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   # AWS Batch Resources - Graviton CPU Environment
   GravitonComputeEnvironment:
@@ -350,13 +271,6 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole
-      Tags:
-        - Key: Project
-          Value: !Ref ProjectTag
-        - Key: Environment
-          Value: !Ref EnvironmentTag
-        - Key: Owner
-          Value: !Ref OwnerTag
 
   # AWS Batch Job Queues
   CPUJobQueue:
@@ -513,52 +427,18 @@ Resources:
           JOB_QUEUE: !Ref CPUJobQueue
           JOB_DEFINITION: !Ref NextflowJobDefinition
 
-  # CloudFront Origin Access Identity for Dashboard
-  DashboardOriginAccessIdentity:
-    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
-    Properties:
-      CloudFrontOriginAccessIdentityConfig:
-        Comment: !Sub "OAI for ${AWS::StackName} dashboard"
+Outputs:
+  OrchestratorLambdaArn:
+    Description: ARN of the orchestrator Lambda function
+    Value: !GetAtt SimpleLambda.Arn
 
-  # CloudFront Distribution for Dashboard
-  DashboardDistribution:
-    Type: AWS::CloudFront::Distribution
-    Properties:
-      DistributionConfig:
-        Origins:
-          - DomainName: !Sub "${DataBucketName}.s3.amazonaws.com"
-            Id: S3Origin
-            S3OriginConfig:
-              OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${DashboardOriginAccessIdentity}"
-        Enabled: true
-        DefaultRootObject: dashboard/index.html
-        DefaultCacheBehavior:
-          AllowedMethods:
-            - GET
-            - HEAD
-          TargetOriginId: S3Origin
-          ForwardedValues:
-            QueryString: false
-            Cookies:
-              Forward: none
-          ViewerProtocolPolicy: redirect-to-https
-        PriceClass: PriceClass_100
-        ViewerCertificate:
-          CloudFrontDefaultCertificate: true
-        Comment: !Sub "Dashboard for ${AWS::StackName}"
+  CPUJobQueueArn:
+    Description: ARN of the CPU job queue
+    Value: !GetAtt CPUJobQueue.JobQueueArn
 
-  # S3 Bucket Policy for CloudFront
-  DashboardBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref DataBucketName
-      PolicyDocument:
-        Statement:
-          - Action: s3:GetObject
-            Effect: Allow
-            Resource: !Sub "arn:aws:s3:::${DataBucketName}/dashboard/*"
-            Principal:
-              CanonicalUser: !GetAtt DashboardOriginAccessIdentity.S3CanonicalUserId
+  GPUJobQueueArn:
+    Description: ARN of the GPU job queue
+    Value: !GetAtt GPUJobQueue.JobQueueArn
 
 Outputs:
   OrchestratorLambdaArn:
