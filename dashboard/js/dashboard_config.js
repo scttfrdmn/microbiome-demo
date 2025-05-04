@@ -20,8 +20,8 @@ const DASHBOARD_CONFIG = {
     // Production S3 paths that will be populated during deployment
     production: {
       // The base URL and bucket will be populated by start_demo.sh
-      baseUrl: '{{DASHBOARD_BASE_URL}}',
-      bucketName: '{{BUCKET_NAME}}',
+      baseUrl: 'http://microbiome-demo-dashboard-1746342992.s3-website-us-east-1.amazonaws.com',
+      bucketName: 'microbiome-demo-bucket-1746342697',
       
       // Real data paths from Nextflow workflow
       progress: 'status/progress.json',
@@ -32,20 +32,17 @@ const DASHBOARD_CONFIG = {
   
   // Environment - set to 'production' to use real data from S3
   // Will be populated during deployment
-  environment: '{{ENVIRONMENT}}',
+  environment: 'production',
   
   // Flag to enable debugging
   debug: true,
   
   // Get the appropriate data URL based on environment
   getDataUrl: function(fileType) {
-    if (this.environment === 'production') {
-      // For production, use absolute URLs to S3
-      return `${this.dataPaths.production.baseUrl}/${fileType}`;
-    } else {
-      // For local development, use relative paths
-      return this.dataPaths.localDevelopment[fileType];
-    }
+    // IMPORTANT: For both production and development
+    // use the local paths - the data will be copied from
+    // the real pipeline output to the dashboard bucket
+    return this.dataPaths.localDevelopment[fileType];
   }
 };
 

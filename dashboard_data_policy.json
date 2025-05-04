@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadForDashboardData",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::microbiome-demo-bucket-1746342697/status/progress.json",
+        "arn:aws:s3:::microbiome-demo-bucket-1746342697/results/summary/microbiome_summary.json",
+        "arn:aws:s3:::microbiome-demo-bucket-1746342697/monitoring/resources.json"
+      ]
+    }
+  ]
+}
