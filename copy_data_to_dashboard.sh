@@ -76,9 +76,7 @@ if run_aws s3 ls "s3://${BUCKET_NAME}/status/progress.json" 2>/dev/null; then
     # Create empty resource file
     cat > /tmp/empty_resources.json << EOF
 {
-  "utilization": [
-    {"time": 0, "cpu": 0, "memory": 0, "gpu": 0}
-  ],
+  "utilization": [],
   "instances": {
     "cpu": 8,
     "gpu": 2
@@ -91,17 +89,13 @@ EOF
     cat > /tmp/empty_summary.json << EOF
 {
   "taxonomic_profile": {
-    "phylum_distribution": [
-      {"name": "Initializing...", "abundance": 1.0}
-    ],
-    "sample_count": 100
+    "phylum_distribution": [],
+    "sample_count": 0
   },
   "diversity": {
     "shannon_index": 0,
     "simpson_index": 0,
-    "by_site": {
-      "stool": 0
-    }
+    "by_site": {}
   },
   "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 }

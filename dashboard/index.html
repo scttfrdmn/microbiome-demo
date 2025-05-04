@@ -463,6 +463,25 @@
             const tableBody = document.querySelector('#taxonomyTable tbody');
             tableBody.innerHTML = ''; // Clear existing rows
             
+            // Handle empty data
+            if (!data || data.length === 0) {
+                const row = document.createElement('tr');
+                const nameCell = document.createElement('td');
+                nameCell.textContent = "Initializing...";
+                const valueCell = document.createElement('td');
+                valueCell.textContent = "No data yet";
+                row.appendChild(nameCell);
+                row.appendChild(valueCell);
+                tableBody.appendChild(row);
+                
+                // If chart exists, destroy it to show empty state
+                if (taxonomyChart) {
+                    taxonomyChart.destroy();
+                    taxonomyChart = null;
+                }
+                return;
+            }
+            
             data.forEach(item => {
                 const row = document.createElement('tr');
                 const nameCell = document.createElement('td');
@@ -520,6 +539,16 @@
         
         // Update sample UI
         function updateSampleUI(data) {
+            // Handle empty data
+            if (!data || Object.keys(data).length === 0) {
+                // If chart exists, destroy it to show empty state
+                if (sampleChart) {
+                    sampleChart.destroy();
+                    sampleChart = null;
+                }
+                return;
+            }
+            
             // Update or create chart
             const ctx = document.getElementById('sampleChart').getContext('2d');
             const labels = Object.keys(data).map(key => key.replace('_', ' '));
@@ -562,6 +591,22 @@
         
         // Update resource UI
         function updateResourceUI(data) {
+            // Handle empty data
+            if (!data || data.length === 0) {
+                // If chart exists, destroy it to show empty state
+                if (resourceChart) {
+                    resourceChart.destroy();
+                    resourceChart = null;
+                }
+                
+                // Draw an empty chart with "No data available" message
+                const ctx = document.getElementById('resourceChart').getContext('2d');
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('No resource data available yet', ctx.canvas.width/2, ctx.canvas.height/2);
+                return;
+            }
+            
             // Update or create chart
             const ctx = document.getElementById('resourceChart').getContext('2d');
             const labels = data.map(item => `Time ${item.time}`);
