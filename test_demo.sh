@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Scott Friedman. All Rights Reserved.
+#
 # test_demo.sh
 # Script to run a test job with a small subset of samples
 

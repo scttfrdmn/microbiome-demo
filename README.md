@@ -1,5 +1,8 @@
 # 15-Minute "Wow" Microbiome Demo on AWS
 
+> SPDX-License-Identifier: Apache-2.0  
+> Copyright 2025 Scott Friedman. All Rights Reserved.
+
 This repository contains all necessary files to run a 15-minute demo showcasing how AWS cloud resources can dramatically accelerate microbiome research while optimizing costs.
 
 ## Overview

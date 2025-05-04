@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Scott Friedman. All Rights Reserved.
+//
 // MicrobiomeDashboard.js
 // Using UMD modules instead of ES6 imports for browser compatibility
 const {

@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Scott Friedman. All Rights Reserved.
+#
 # start_demo.sh - Launch the microbiome demo workflow
 
 # Source configuration if it exists

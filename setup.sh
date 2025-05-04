@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Scott Friedman. All Rights Reserved.
+#
 # setup.sh - Initial setup for the microbiome demo
 
 set -e  # Exit on error

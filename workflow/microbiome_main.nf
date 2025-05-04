@@ -1,6 +1,9 @@
 #!/usr/bin/env nextflow
 
 /*
+ * SPDX-License-Identifier: Apache-2.0
+ * Copyright 2025 Scott Friedman. All Rights Reserved.
+ *
  * Nextflow pipeline for the 15-minute Microbiome Demo
  * This pipeline processes metagenomic samples from the Human Microbiome Project
  * and performs taxonomic and functional profiling
