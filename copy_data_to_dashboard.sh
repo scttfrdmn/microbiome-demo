@@ -23,13 +23,15 @@ else
 fi
 
 # Get dashboard bucket name
-DASHBOARD_BUCKET=$(cat /tmp/dashboard_bucket.txt 2>/dev/null || echo "${BUCKET_NAME}-dashboard")
+# Use the main bucket with dashboard subdirectory
+DASHBOARD_BUCKET="$BUCKET_NAME"
+DASHBOARD_PREFIX="dashboard/"
 
 echo "==========================================="
 echo "Copying data files to dashboard bucket"
 echo "==========================================="
 echo "Data bucket: $BUCKET_NAME"
-echo "Dashboard bucket: $DASHBOARD_BUCKET"
+echo "Dashboard location: $DASHBOARD_BUCKET/$DASHBOARD_PREFIX"
 echo "Region: $REGION"
 if [ -n "$AWS_PROFILE" ]; then
   echo "AWS Profile: $AWS_PROFILE"
@@ -67,13 +69,35 @@ if run_aws s3 ls "s3://${BUCKET_NAME}/status/progress.json" 2>/dev/null; then
     fi
   fi
   
-  # Always check if status is INITIALIZING and provide empty resources and taxonomy
-  STATUS=$(grep -o '"status":[^,}]*' /tmp/progress.json | cut -d':' -f2 | tr -d '"}')
+  # Check for different pipeline states and handle them appropriately
+  # Make sure we get a reliable detection of the status
+  if grep -q '"status":"INITIALIZING"' /tmp/progress.json; then
+    STATUS="INITIALIZING"
+  elif grep -q '"status":"FAILED"' /tmp/progress.json; then
+    STATUS="FAILED"
+  elif grep -q '"status":"RUNNING"' /tmp/progress.json; then
+    STATUS="RUNNING"
+  elif grep -q '"status":"COMPLETED"' /tmp/progress.json; then
+    STATUS="COMPLETED"
+  else
+    # If we can't reliably determine status with grep, try to extract it more carefully
+    STATUS=$(grep -o '"status":[^,}]*' /tmp/progress.json | cut -d':' -f2 | tr -d '"}')
+    # Fallback if still empty
+    if [ -z "$STATUS" ]; then
+      STATUS="UNKNOWN"
+      echo "Warning: Could not detect status, falling back to UNKNOWN"
+    fi
+  fi
   echo "Detected pipeline status: $STATUS"
   
-  if [ "$STATUS" = "INITIALIZING" ]; then
+  # Handle different states appropriately - include special handling for FAILED
+  if [ "$STATUS" = "INITIALIZING" ] || [ "$STATUS" = "FAILED" ]; then
+    # We treat FAILED like INITIALIZING for data setup, but keep the FAILED status
+    # This prevents cycling between FAILED and loading pipeline by providing valid
+    # empty chart data structures
     echo "Status is INITIALIZING - uploading empty resource and summary files for clean state..."
-    # Create empty resource file
+    # Create clean empty resource file for INITIALIZING state
+    # This provides proper structure but no data points for charts
     cat > /tmp/empty_resources.json << EOF
 {
   "utilization": [],
@@ -85,7 +109,8 @@ if run_aws s3 ls "s3://${BUCKET_NAME}/status/progress.json" 2>/dev/null; then
 }
 EOF
     
-    # Create empty summary file
+    # Create clean empty summary file for INITIALIZING state
+    # This provides proper structure for the dashboard in initial state
     cat > /tmp/empty_summary.json << EOF
 {
   "taxonomic_profile": {
@@ -259,6 +284,7 @@ else
   run_aws s3 cp /tmp/resources.json "s3://${DASHBOARD_BUCKET}/monitoring/resources.json" --content-type "application/json"
 fi
 
-echo "All data files have been copied to the dashboard bucket"
+echo "All data files have been copied to the main bucket"
 echo "The dashboard should now display the real data from the pipeline"
+echo "Dashboard is accessible at: http://${BUCKET_NAME}.s3-website-${REGION}.amazonaws.com/dashboard/"
 echo "==========================================="
